@@ -7,7 +7,7 @@
     
     <!-- NuGet Package Properties -->
     <PackageId>VlcVideoPlayer.Avalonia</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Authors>jojomondag</Authors>
     <Company>jojomondag</Company>
     <Description>A self-contained VLC-based video player control for Avalonia UI. Includes embedded VLC libraries - no external VLC installation required.</Description>
