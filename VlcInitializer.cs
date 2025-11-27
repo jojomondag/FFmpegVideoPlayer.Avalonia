@@ -449,6 +449,17 @@ public static class VlcInitializer
         }
 
         var baseDir = AppContext.BaseDirectory;
+        
+        // On Windows, check for libvlc.dll directly in the vlc folder first
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            var embeddedVlcPath = Path.Combine(baseDir, "vlc");
+            if (File.Exists(Path.Combine(embeddedVlcPath, "libvlc.dll")))
+            {
+                return embeddedVlcPath;
+            }
+        }
+        
         var embeddedLibPath = Path.Combine(baseDir, "vlc", "lib");
         if (Directory.Exists(embeddedLibPath))
         {

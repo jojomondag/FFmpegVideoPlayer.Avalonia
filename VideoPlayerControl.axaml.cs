@@ -28,6 +28,7 @@ public partial class VideoPlayerControl : UserControl
     private TextBlock? _playPauseText;
     private MaterialIcon? _volumeIcon;
     private bool _isDraggingSeekBar;
+    private bool _isUpdatingSeekBar;
     private bool _isMuted;
     private int _previousVolume = 100;
     private bool _isInitialized;
@@ -142,8 +143,9 @@ public partial class VideoPlayerControl : UserControl
         // Setup seek bar events
         if (_seekBar != null)
         {
-            _seekBar.PointerPressed += (_, _) => _isDraggingSeekBar = true;
-            _seekBar.PointerReleased += OnSeekBarReleased;
+            _seekBar.AddHandler(Avalonia.Input.InputElement.PointerPressedEvent, OnSeekBarPointerPressed, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+            _seekBar.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, OnSeekBarPointerReleased, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+            _seekBar.AddHandler(Avalonia.Input.InputElement.PointerCaptureLostEvent, OnSeekBarPointerCaptureLost, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         }
 
         // Setup volume slider
@@ -343,7 +345,9 @@ public partial class VideoPlayerControl : UserControl
         {
             if (_seekBar != null)
             {
+                _isUpdatingSeekBar = true;
                 _seekBar.Value = e.Position * 100;
+                _isUpdatingSeekBar = false;
             }
 
             if (_currentTimeText != null && _mediaPlayer.Length > 0)
@@ -366,12 +370,32 @@ public partial class VideoPlayerControl : UserControl
         });
     }
 
-    private void OnSeekBarReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
+    private void OnSeekBarPointerPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
     {
-        _isDraggingSeekBar = false;
-        if (_mediaPlayer != null && _seekBar != null)
+        _isDraggingSeekBar = true;
+    }
+
+    private void OnSeekBarPointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
+    {
+        if (_isDraggingSeekBar)
         {
-            _mediaPlayer.Position = (float)(_seekBar.Value / 100);
+            _isDraggingSeekBar = false;
+            if (_mediaPlayer != null && _seekBar != null)
+            {
+                _mediaPlayer.Position = (float)(_seekBar.Value / 100);
+            }
+        }
+    }
+
+    private void OnSeekBarPointerCaptureLost(object? sender, Avalonia.Input.PointerCaptureLostEventArgs e)
+    {
+        if (_isDraggingSeekBar)
+        {
+            _isDraggingSeekBar = false;
+            if (_mediaPlayer != null && _seekBar != null)
+            {
+                _mediaPlayer.Position = (float)(_seekBar.Value / 100);
+            }
         }
     }
 

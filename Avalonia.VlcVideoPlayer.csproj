@@ -22,6 +22,14 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
+  <!-- Exclude TestApp folder from compilation -->
+  <ItemGroup>
+    <Compile Remove="TestApp\**" />
+    <None Remove="TestApp\**" />
+    <AvaloniaResource Remove="TestApp\**" />
+    <AvaloniaXaml Remove="TestApp\**" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.6" />
     <PackageReference Include="LibVLCSharp" Version="3.9.4" />

@@ -1,0 +1,26 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vlc="clr-namespace:Avalonia.VlcVideoPlayer;assembly=Avalonia.VlcVideoPlayer"
+        mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+        x:Class="VlcPlayerTestApp.MainWindow"
+        Title="VLC Video Player Test App"
+        Width="900" Height="600">
+    
+    <Grid RowDefinitions="*,Auto">
+        <!-- Video Player Control -->
+        <vlc:VideoPlayerControl x:Name="VideoPlayer" 
+                                Grid.Row="0"
+                                ShowControls="True" 
+                                AutoPlay="True" />
+        
+        <!-- Status Bar -->
+        <Border Grid.Row="1" Background="#1e1e1e" Padding="10">
+            <TextBlock x:Name="StatusText" 
+                       Text="Ready - Use the Open button to load a video file" 
+                       Foreground="White" 
+                       FontSize="12"/>
+        </Border>
+    </Grid>
+</Window>
