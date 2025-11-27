@@ -7,7 +7,7 @@
     
     <!-- NuGet Package Properties -->
     <PackageId>VlcVideoPlayer.Avalonia</PackageId>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Authors>jojomondag</Authors>
     <Company>jojomondag</Company>
     <Description>A self-contained VLC-based video player control for Avalonia UI. Includes embedded VLC libraries - no external VLC installation required.</Description>
@@ -20,6 +20,10 @@
     <!-- Generate XML documentation -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+    
+    <!-- Suppress contentFiles inheritance from dependencies -->
+    <SuppressDependenciesWhenPacking>false</SuppressDependenciesWhenPacking>
+    <ContentTargetFolders>content</ContentTargetFolders>
   </PropertyGroup>
 
   <!-- Exclude TestApp folder from compilation -->
@@ -35,7 +39,24 @@
     <PackageReference Include="LibVLCSharp" Version="3.9.4" />
     <PackageReference Include="LibVLCSharp.Avalonia" Version="3.9.4" />
     <PackageReference Include="Material.Icons.Avalonia" Version="2.4.1" />
+    
+    <!-- VideoLAN's official LibVLC native binaries - flows as transitive dependency to consumers -->
+    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.21" PrivateAssets="contentfiles" />
   </ItemGroup>
+
+  <!-- 
+    Prevent VideoLAN.LibVLC.Windows native files from being packed into this library package.
+    The native files will be included by the consuming application when they build.
+    Using PrivateAssets="contentfiles" above prevents contentFiles from flowing but the 
+    dependency still flows, and then consumers get the native files directly.
+  -->
+  <Target Name="ExcludeVlcFromPack" BeforeTargets="_GetPackageFiles">
+    <ItemGroup>
+      <_PackageFiles Remove="@(_PackageFiles)" Condition="$([System.String]::Copy('%(Identity)').Contains('libvlc'))" />
+      <_PackageFiles Remove="@(_PackageFiles)" Condition="$([System.String]::Copy('%(Identity)').Contains('plugin.dll'))" />
+      <Content Remove="@(Content)" Condition="$([System.String]::Copy('%(Identity)').Contains('libvlc'))" />
+    </ItemGroup>
+  </Target>
 
   <!-- Include README in package -->
   <ItemGroup>

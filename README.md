@@ -1,13 +1,13 @@
 # VlcVideoPlayer.Avalonia
 
-A self-contained VLC-based video player control for Avalonia UI with **automatic VLC library download**.
+A self-contained VLC-based video player control for Avalonia UI with **embedded VLC libraries**.
 
 [![NuGet](https://img.shields.io/nuget/v/VlcVideoPlayer.Avalonia.svg)](https://www.nuget.org/packages/VlcVideoPlayer.Avalonia/)
 
 ## Features
 
 - 🎬 Full-featured video player control for Avalonia
-- 📥 **Automatic VLC library download** - no manual installation required!
+- 📦 **VLC libraries included** - no manual installation required!
 - 🎨 Built-in playback controls with Material Icons
 - 🖥️ Cross-platform (Windows, macOS, Linux)
 - ⚡ Based on LibVLCSharp for maximum codec support
@@ -17,6 +17,8 @@ A self-contained VLC-based video player control for Avalonia UI with **automatic
 ```bash
 dotnet add package VlcVideoPlayer.Avalonia
 ```
+
+The package includes the official VideoLAN LibVLC libraries for Windows. For other platforms, see [Platform Support](#platform-support).
 
 ## Quick Start
 
@@ -38,7 +40,7 @@ dotnet add package VlcVideoPlayer.Avalonia
 ```csharp
 using Avalonia.VlcVideoPlayer;
 
-// Call before creating any windows - will auto-download VLC if needed
+// Call before creating any windows
 VlcInitializer.Initialize();
 ```
 
@@ -60,28 +62,27 @@ VideoPlayer.Open("/path/to/video.mp4");
 VideoPlayer.OpenUri(new Uri("https://example.com/video.mp4"));
 ```
 
-## Auto-Download Feature
+## Platform Support
 
-The `VlcInitializer` automatically handles VLC library setup:
+| Platform | VLC Libraries |
+|----------|---------------|
+| **Windows x64** | ✅ Included via NuGet (VideoLAN.LibVLC.Windows) |
+| **macOS** | 📥 Auto-copies from VLC.app if installed, or prompts to install |
+| **Linux** | 📦 Uses system VLC (`sudo apt install vlc libvlc-dev`) |
 
-- **Windows**: Downloads VLC ZIP and extracts to your app's output folder
-- **macOS**: Copies libraries from VLC.app if installed, or prompts to install
-- **Linux**: Prompts to install VLC via package manager
+### Adding macOS/Linux support to your project
 
-### Track download progress
+For cross-platform applications, add the appropriate LibVLC packages:
 
-```csharp
-VlcInitializer.DownloadProgressChanged += (progress) => 
-{
-    Console.WriteLine($"Download: {progress}%");
-};
+```xml
+<!-- In your .csproj -->
+<ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+  <PackageReference Include="VideoLAN.LibVLC.Mac" Version="3.0.21" />
+</ItemGroup>
 
-VlcInitializer.StatusChanged += (status) =>
-{
-    Console.WriteLine(status);
-};
-
-await VlcInitializer.InitializeAsync();
+<ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+  <PackageReference Include="VideoLAN.LibVLC.Linux" Version="3.0.21" />
+</ItemGroup>
 ```
 
 ## API Reference

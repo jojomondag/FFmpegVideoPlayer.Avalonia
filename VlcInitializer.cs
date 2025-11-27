@@ -412,6 +412,18 @@ public static class VlcInitializer
         }
 
         var baseDir = AppContext.BaseDirectory;
+        
+        // Check for VideoLAN.LibVLC.Windows NuGet package structure (win-x64)
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            var nugetPluginPath = Path.Combine(baseDir, "libvlc", "win-x64", "plugins");
+            if (Directory.Exists(nugetPluginPath))
+            {
+                return nugetPluginPath;
+            }
+        }
+        
+        // Check for manually downloaded/extracted VLC
         var embeddedPluginPath = Path.Combine(baseDir, "vlc", "plugins");
         if (Directory.Exists(embeddedPluginPath))
         {
@@ -420,6 +432,13 @@ public static class VlcInitializer
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
+            // Check for VideoLAN.LibVLC.Mac NuGet package
+            var nugetMacPluginPath = Path.Combine(baseDir, "libvlc", "osx-x64", "plugins");
+            if (Directory.Exists(nugetMacPluginPath))
+            {
+                return nugetMacPluginPath;
+            }
+            
             var macOsPluginPath = "/Applications/VLC.app/Contents/MacOS/plugins";
             if (Directory.Exists(macOsPluginPath))
             {
@@ -450,9 +469,16 @@ public static class VlcInitializer
 
         var baseDir = AppContext.BaseDirectory;
         
-        // On Windows, check for libvlc.dll directly in the vlc folder first
+        // Check for VideoLAN.LibVLC.Windows NuGet package structure
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
+            var nugetLibPath = Path.Combine(baseDir, "libvlc", "win-x64");
+            if (File.Exists(Path.Combine(nugetLibPath, "libvlc.dll")))
+            {
+                return nugetLibPath;
+            }
+            
+            // Also check for manually downloaded VLC in vlc folder
             var embeddedVlcPath = Path.Combine(baseDir, "vlc");
             if (File.Exists(Path.Combine(embeddedVlcPath, "libvlc.dll")))
             {
@@ -468,6 +494,13 @@ public static class VlcInitializer
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
+            // Check for VideoLAN.LibVLC.Mac NuGet package
+            var nugetMacLibPath = Path.Combine(baseDir, "libvlc", "osx-x64");
+            if (File.Exists(Path.Combine(nugetMacLibPath, "libvlc.dylib")))
+            {
+                return nugetMacLibPath;
+            }
+            
             var macOsLibPath = "/Applications/VLC.app/Contents/MacOS/lib";
             if (Directory.Exists(macOsLibPath))
             {
