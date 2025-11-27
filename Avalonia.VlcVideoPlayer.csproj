@@ -26,18 +26,6 @@
     <ContentTargetFolders>content</ContentTargetFolders>
   </PropertyGroup>
 
-  <!-- Exclude TestApp and NugetAppTest folders from compilation -->
-  <ItemGroup>
-    <Compile Remove="TestApp\**" />
-    <None Remove="TestApp\**" />
-    <AvaloniaResource Remove="TestApp\**" />
-    <AvaloniaXaml Remove="TestApp\**" />
-    <Compile Remove="NugetAppTest\**" />
-    <None Remove="NugetAppTest\**" />
-    <AvaloniaResource Remove="NugetAppTest\**" />
-    <AvaloniaXaml Remove="NugetAppTest\**" />
-  </ItemGroup>
-
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.6" />
     <PackageReference Include="LibVLCSharp" Version="3.9.4" />
