@@ -108,7 +108,7 @@ Here's a minimal working example:
     <PackageReference Include="Avalonia" Version="11.3.6" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.6" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.6" />
-    <PackageReference Include="VlcVideoPlayer.Avalonia" Version="1.4.0" />
+    <PackageReference Include="VlcVideoPlayer.Avalonia" Version="1.5.0" />
   </ItemGroup>
 </Project>
 ```
@@ -190,11 +190,22 @@ The control panel background can be customized to match your app's theme:
 
 ## Platform Support
 
-| Platform | VLC Libraries |
-|----------|---------------|
-| **Windows x64** | ✅ Included via NuGet (VideoLAN.LibVLC.Windows) |
-| **macOS** | 📥 Auto-copies from VLC.app if installed, or prompts to install |
-| **Linux** | 📦 Uses system VLC (`sudo apt install vlc libvlc-dev`) |
+| Platform | Architecture | VLC Libraries |
+|----------|--------------|---------------|
+| **Windows** | x64 | ✅ Included via NuGet (VideoLAN.LibVLC.Windows) |
+| **Windows** | ARM64 | ✅ Uses x64 via emulation |
+| **macOS** | ARM64 (Apple Silicon) | ✅ Auto-downloads correct DMG or copies from VLC.app |
+| **macOS** | x64 (Intel) | ✅ Auto-downloads correct DMG or copies from VLC.app |
+| **Linux** | x64 | 📦 Uses system VLC (`sudo apt install vlc libvlc-dev`) |
+| **Linux** | ARM64 | 📦 Uses system VLC |
+
+### Architecture Detection
+
+The library automatically detects your system's architecture and:
+- **macOS**: Validates existing VLC.app architecture matches your Mac (ARM64 vs Intel)
+- **macOS**: Downloads the correct VLC DMG (arm64 or intel64) if needed
+- **Windows**: Uses x64 VLC (works on ARM64 via emulation)
+- **Linux**: Detects x64 vs ARM64 library paths
 
 ### Adding macOS/Linux support to your project
 

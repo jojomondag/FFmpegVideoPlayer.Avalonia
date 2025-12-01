@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2025-12-01
+
+### Added
+- **Automatic architecture detection** (x64, ARM64, x86)
+- **macOS Apple Silicon (ARM64) support** - automatically downloads correct VLC version
+- **macOS Intel (x64) support** - automatically downloads correct VLC version
+- Architecture validation on macOS - detects wrong architecture and re-downloads correct version
+- DMG extraction support - automatically mounts, extracts VLC libraries, and unmounts
+- Linux ARM64 (aarch64) architecture support
+- Linux distro detection with appropriate package manager instructions
+- `PlatformInfo` property to get current platform and architecture
+- `IsArm`, `IsX64`, `IsX86` static properties for architecture detection
+- `DYLD_LIBRARY_PATH` and `DYLD_FALLBACK_LIBRARY_PATH` environment variables on macOS
+- `LD_LIBRARY_PATH` environment variable on Linux
+- Architecture-specific VLC storage directories (`vlc/arm64/`, `vlc/x64/`)
+
+### Fixed
+- **Fixed VLC library loading on macOS** - now properly sets dynamic library paths before initialization
+- **Fixed architecture mismatch issues on Apple Silicon Macs** - no longer tries to load Intel VLC on ARM64
+- Improved error messages with architecture information
+
+### Changed
+- VLC libraries are now stored in architecture-specific subdirectories
+- Enhanced logging with detailed platform/architecture info
+
 ## [1.4.0] - 2025-11-27
 
 ### Added

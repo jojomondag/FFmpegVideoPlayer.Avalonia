@@ -7,10 +7,11 @@
     
     <!-- NuGet Package Properties -->
     <PackageId>VlcVideoPlayer.Avalonia</PackageId>
-    <Version>1.4.0</Version>
+    <Version>1.5.0</Version>
     <Authors>jojomondag</Authors>
     <Company>jojomondag</Company>
-    <Description>A self-contained VLC-based video player control for Avalonia UI. Includes embedded VLC libraries - no external VLC installation required.</Description>
+    <Description>A self-contained VLC-based video player control for Avalonia UI. Automatically downloads and configures the correct VLC libraries for your platform (Windows/macOS/Linux) and architecture (x64/ARM64). Full Apple Silicon support!</Description>
+    <PackageReleaseNotes>v1.5.0: Added automatic architecture detection. Supports macOS Apple Silicon (ARM64) and Intel, Windows x64, Linux x64/ARM64. Automatically validates and downloads correct VLC version.</PackageReleaseNotes>
     <PackageTags>avalonia;vlc;video;player;media;libvlc;cross-platform</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/jojomondag/Avalonia.VlcVideoPlayer</PackageProjectUrl>
