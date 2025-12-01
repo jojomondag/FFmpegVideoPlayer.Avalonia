@@ -7,22 +7,21 @@ using LibVLCSharp.Shared;
 namespace Avalonia.VlcVideoPlayer;
 
 /// <summary>
-/// Handles VLC initialization by detecting system-installed VLC libraries.
+/// Handles VLC initialization using NuGet packages where available.
 /// 
-/// Platform Setup Requirements:
+/// Platform Support:
 /// 
-/// Windows: VLC binaries are included via the VideoLAN.LibVLC.Windows NuGet package.
-///          No additional setup required.
+/// Windows (x64/x86): VLC binaries included via VideoLAN.LibVLC.Windows NuGet package.
+///                    No additional setup required.
 /// 
-/// macOS:   Install VLC via Homebrew: brew install vlc
-///          Or install VLC.app from https://www.videolan.org/vlc/
-///          Supports both Intel (x64) and Apple Silicon (ARM64).
+/// macOS (Intel x64): VLC binaries included via VideoLAN.LibVLC.Mac NuGet package.
+///                    No additional setup required.
 /// 
-/// Linux:   Install VLC via your package manager:
-///          - Debian/Ubuntu: sudo apt install vlc libvlc-dev
-///          - Fedora: sudo dnf install vlc vlc-devel
-///          - Arch: sudo pacman -S vlc
-///          Supports both x64 and ARM64 architectures.
+/// macOS (ARM64):     No NuGet package available. Requires system VLC installation.
+///                    Install via: brew install --cask vlc (then get ARM64 version)
+/// 
+/// Linux (x64/ARM64): No NuGet package available. Requires system VLC installation.
+///                    Install via: sudo apt install vlc libvlc-dev
 /// </summary>
 public static class VlcInitializer
 {
@@ -240,48 +239,40 @@ public static class VlcInitializer
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             return @"
-WINDOWS INSTALLATION:
-VLC binaries should be included via the VideoLAN.LibVLC.Windows NuGet package.
+WINDOWS:
+VLC binaries are provided via the VideoLAN.LibVLC.Windows NuGet package.
 Ensure your project references 'VideoLAN.LibVLC.Windows' version 3.0.21 or later.
-
-If issues persist, install VLC manually from: https://www.videolan.org/vlc/";
+The binaries should be in your output directory under 'libvlc/win-x64/'.";
         }
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
-            var arch = IsArm ? "Apple Silicon (ARM64)" : "Intel (x64)";
             if (IsArm)
             {
-                return $@"
-macOS INSTALLATION ({arch}):
+                return @"
+macOS (Apple Silicon ARM64):
+No NuGet package is available for macOS ARM64.
+You must install VLC on your system:
 
-IMPORTANT: Homebrew's VLC cask installs an Intel (x86_64) version.
-For Apple Silicon Macs, download the ARM64 version directly:
+    brew install --cask vlc
 
-1. Visit https://www.videolan.org/vlc/download-macosx.html
-2. Click 'Apple Silicon Package' to download vlc-3.0.21-arm64.dmg
-3. Install VLC.app to /Applications
-
-Direct download link:
-https://get.videolan.org/vlc/3.0.21/macosx/vlc-3.0.21-arm64.dmg";
+Note: After installing, ensure you have the ARM64 version of VLC.app
+in /Applications. The library will automatically detect it.";
             }
-            return $@"
-macOS INSTALLATION ({arch}):
-
-Option 1 - Homebrew:
-    brew install vlc
-
-Option 2 - Download VLC.app:
-    1. Visit https://www.videolan.org/vlc/download-macosx.html
-    2. Download the Intel 64-bit version
-    3. Install VLC.app to /Applications";
+            return @"
+macOS (Intel x64):
+VLC binaries are provided via the VideoLAN.LibVLC.Mac NuGet package.
+Ensure your project references 'VideoLAN.LibVLC.Mac' version 3.1.3.1 or later.
+The binaries should be in your output directory under 'libvlc/osx-x64/'.";
         }
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
             var arch = GetArchitectureName();
             return $@"
-LINUX INSTALLATION ({arch}):
+LINUX ({arch}):
+No NuGet package is available for Linux.
+You must install VLC on your system:
 
 Debian/Ubuntu:
     sudo apt update
@@ -291,15 +282,10 @@ Fedora:
     sudo dnf install vlc vlc-devel
 
 Arch Linux:
-    sudo pacman -S vlc
-
-openSUSE:
-    sudo zypper install vlc vlc-devel
-
-After installation, the VLC libraries should be automatically detected.";
+    sudo pacman -S vlc";
         }
 
-        return "Please install VLC from https://www.videolan.org/vlc/";
+        return "VLC libraries not found. Please ensure VLC is installed on your system.";
     }
 
     /// <summary>

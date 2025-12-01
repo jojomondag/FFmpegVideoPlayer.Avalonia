@@ -1,6 +1,6 @@
 # VlcVideoPlayer.Avalonia
 
-A VLC-based video player control for Avalonia UI that uses **system-installed VLC** on macOS/Linux and **NuGet packages** on Windows.
+A VLC-based video player control for Avalonia UI using **VideoLAN NuGet packages** for VLC binaries.
 
 [![NuGet](https://img.shields.io/nuget/v/VlcVideoPlayer.Avalonia.svg)](https://www.nuget.org/packages/VlcVideoPlayer.Avalonia/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -11,7 +11,7 @@ A VLC-based video player control for Avalonia UI that uses **system-installed VL
 
 - 🎬 Full-featured video player control for Avalonia
 - 🖥️ Cross-platform (Windows, macOS, Linux)
-- 🍎 **Full Apple Silicon (M1/M2/M3) support**
+- 📦 **VLC binaries via NuGet** for Windows and macOS Intel
 - 🎨 Clean, modern UI with Material Design icons
 - ⚡ Based on LibVLCSharp for maximum codec support
 - 🎛️ Built-in controls: Play/Pause, Stop, Seek bar, Volume slider, Mute
@@ -22,45 +22,34 @@ A VLC-based video player control for Avalonia UI that uses **system-installed VL
 dotnet add package VlcVideoPlayer.Avalonia
 ```
 
-### Platform-Specific Setup
+### Platform Support
 
-| Platform | Setup Required |
-|----------|----------------|
-| **Windows** | ✅ None - VLC binaries included via NuGet |
-| **macOS** | Install VLC: `brew install vlc` or download from [videolan.org](https://www.videolan.org/vlc/download-macosx.html) |
-| **Linux** | Install VLC: `sudo apt install vlc libvlc-dev` (Debian/Ubuntu) |
+| Platform | VLC Source | Setup Required |
+|----------|------------|----------------|
+| **Windows (x64/x86)** | `VideoLAN.LibVLC.Windows` NuGet | ✅ None - included |
+| **macOS Intel (x64)** | `VideoLAN.LibVLC.Mac` NuGet | ✅ None - included |
+| **macOS ARM64 (Apple Silicon)** | System VLC | `brew install --cask vlc` |
+| **Linux (x64/ARM64)** | System VLC | `sudo apt install vlc libvlc-dev` |
 
-#### macOS Installation
+#### macOS ARM64 (Apple Silicon)
 
-**For Apple Silicon (M1/M2/M3) Macs:**
-
-⚠️ **Important**: Homebrew's VLC cask currently installs an Intel (x86_64) version. For best performance on Apple Silicon, download the ARM64 version directly:
-
-1. Visit https://www.videolan.org/vlc/download-macosx.html
-2. Click "Apple Silicon Package" to download `vlc-3.0.21-arm64.dmg`
-3. Install VLC.app to /Applications
-
-**For Intel Macs:**
+No NuGet package exists for macOS ARM64. Install VLC via Homebrew:
 ```bash
-brew install vlc
+brew install --cask vlc
 ```
-Or download from https://www.videolan.org/vlc/download-macosx.html
 
-#### Linux Installation
+#### Linux
 
-**Debian/Ubuntu:**
+No NuGet package exists for Linux. Install VLC via your package manager:
+
 ```bash
-sudo apt update
+# Debian/Ubuntu
 sudo apt install vlc libvlc-dev
-```
 
-**Fedora:**
-```bash
+# Fedora
 sudo dnf install vlc vlc-devel
-```
 
-**Arch Linux:**
-```bash
+# Arch Linux
 sudo pacman -S vlc
 ```
 
@@ -232,20 +221,22 @@ The control panel background can be customized to match your app's theme:
 
 | Platform | Architecture | VLC Source | Status |
 |----------|--------------|------------|--------|
-| **Windows** | x64 | NuGet package (VideoLAN.LibVLC.Windows) | ✅ Works out of box |
-| **Windows** | x86 | NuGet package (VideoLAN.LibVLC.Windows) | ✅ Works out of box |
-| **macOS** | ARM64 (Apple Silicon) | System VLC (`brew install vlc` or VLC.app) | ✅ Full support |
-| **macOS** | x64 (Intel) | System VLC (`brew install vlc` or VLC.app) | ✅ Full support |
-| **Linux** | x64 | System VLC (`apt/dnf/pacman`) | ✅ Full support |
-| **Linux** | ARM64 | System VLC (`apt/dnf/pacman`) | ✅ Full support (Raspberry Pi, etc.) |
+| **Windows** | x64 | `VideoLAN.LibVLC.Windows` NuGet | ✅ Works out of box |
+| **Windows** | x86 | `VideoLAN.LibVLC.Windows` NuGet | ✅ Works out of box |
+| **macOS** | x64 (Intel) | `VideoLAN.LibVLC.Mac` NuGet | ✅ Works out of box |
+| **macOS** | ARM64 (Apple Silicon) | System VLC (Homebrew) | ⚠️ Requires `brew install --cask vlc` |
+| **Linux** | x64 | System VLC | ⚠️ Requires `apt install vlc libvlc-dev` |
+| **Linux** | ARM64 | System VLC | ⚠️ Requires `apt install vlc libvlc-dev` |
 
 ### How It Works
 
-- **Windows**: The `VideoLAN.LibVLC.Windows` NuGet package is included as a transitive dependency. VLC binaries are automatically copied to your output directory.
+- **Windows**: The `VideoLAN.LibVLC.Windows` NuGet package provides binaries in `libvlc/win-x64/`.
 
-- **macOS**: VlcInitializer detects VLC installed via Homebrew (`/opt/homebrew/lib` or `/usr/local/lib`) or VLC.app (`/Applications/VLC.app`). It validates the architecture matches your Mac (ARM64 vs Intel).
+- **macOS Intel**: The `VideoLAN.LibVLC.Mac` NuGet package provides binaries in `libvlc/osx-x64/`.
 
-- **Linux**: VlcInitializer detects VLC libraries in standard system paths (`/usr/lib/x86_64-linux-gnu`, `/usr/lib/aarch64-linux-gnu`, etc.).
+- **macOS ARM64**: No NuGet package available. VlcInitializer detects VLC.app in `/Applications` or Homebrew installation.
+
+- **Linux**: No NuGet package available. VlcInitializer detects VLC in standard system paths (`/usr/lib/x86_64-linux-gnu`, `/usr/lib/aarch64-linux-gnu`, etc.).
 
 ## API Reference
 
