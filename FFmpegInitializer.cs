@@ -22,6 +22,8 @@ namespace Avalonia.FFmpegVideoPlayer;
 /// 
 /// Linux (x64/ARM64):       Install via package manager.
 ///                          sudo apt install ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev
+/// 
+/// Note: This library uses FFmpeg.AutoGen 8.x which requires FFmpeg 8.x libraries (libavcodec.62).
 /// </summary>
 public static class FFmpegInitializer
 {
@@ -159,6 +161,12 @@ public static class FFmpegInitializer
             {
                 Log($"Using FFmpeg from: {_ffmpegPath}");
                 FFmpegPathResolver.ConfigureNativeSearchPath(_ffmpegPath);
+            }
+            else
+            {
+                // No explicit path found, but we still need to initialize the bindings
+                // This will try to load from system default locations
+                FFmpegPathResolver.InitializeBindings();
             }
 
             // Test FFmpeg by getting version info
@@ -804,12 +812,12 @@ After installation, restart your terminal/IDE.";
 
     #region Logging
 
+    [System.Diagnostics.Conditional("DEBUG")]
     private static void Log(string message)
     {
-        Debug.WriteLine($"[FFmpegInitializer] {message}");
-#if DEBUG
-        Console.WriteLine($"[FFmpegInitializer] {message}");
-#endif
+        var logMessage = $"[FFmpegInitializer] {message}";
+        Debug.WriteLine(logMessage);
+        Console.WriteLine(logMessage);
     }
 
     #endregion

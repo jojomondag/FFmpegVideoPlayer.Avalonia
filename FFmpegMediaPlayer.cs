@@ -1,9 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Threading;
-using System.Threading.Tasks;
-using Avalonia;
-using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
 using FFmpeg.AutoGen;
@@ -13,6 +10,7 @@ namespace Avalonia.FFmpegVideoPlayer;
 /// <summary>
 /// FFmpeg-based media player that decodes video and audio.
 /// Provides cross-platform support including ARM64 macOS.
+/// Uses FFmpeg.AutoGen 8.x bindings (requires FFmpeg 8.x / libavcodec.62).
 /// </summary>
 public sealed unsafe class FFmpegMediaPlayer : IDisposable
 {
@@ -266,7 +264,7 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
         _swsContext = ffmpeg.sws_getContext(
             _videoWidth, _videoHeight, _videoCodecContext->pix_fmt,
             _videoWidth, _videoHeight, AVPixelFormat.AV_PIX_FMT_BGRA,
-            ffmpeg.SWS_BILINEAR, null, null, null);
+            (int)SwsFlags.SWS_BILINEAR, null, null, null);
 
         return _swsContext != null;
     }
@@ -474,10 +472,17 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
 
     private void ProcessVideoPacket()
     {
-        if (ffmpeg.avcodec_send_packet(_videoCodecContext, _packet) < 0) return;
+        var sendResult = ffmpeg.avcodec_send_packet(_videoCodecContext, _packet);
+        if (sendResult < 0)
+        {
+            Console.WriteLine($"[FFmpegMediaPlayer] avcodec_send_packet failed: {sendResult}");
+            return;
+        }
 
+        int frameCount = 0;
         while (ffmpeg.avcodec_receive_frame(_videoCodecContext, _frame) >= 0)
         {
+            frameCount++;
             // Convert to BGRA
             ffmpeg.sws_scale(_swsContext,
                 _frame->data, _frame->linesize, 0, _videoHeight,
@@ -499,10 +504,13 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
             // Notify frame ready
             var frameData = new byte[_rgbBufferSize];
             Marshal.Copy((IntPtr)_rgbFrame->data[0], frameData, 0, _rgbBufferSize);
+            var stride = _rgbFrame->linesize[0];
+            var width = _videoWidth;
+            var height = _videoHeight;
             
             Dispatcher.UIThread.Post(() =>
             {
-                FrameReady?.Invoke(this, new FrameEventArgs(frameData, _videoWidth, _videoHeight, _rgbFrame->linesize[0]));
+                FrameReady?.Invoke(this, new FrameEventArgs(frameData, width, height, stride));
             });
         }
     }

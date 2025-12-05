@@ -1,20 +1,21 @@
 using System;
 using System.Collections.Generic;
-using Avalonia;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
-using Avalonia.Media.Imaging;
 using Material.Icons;
 using Material.Icons.Avalonia;
-using System.Runtime.InteropServices;
 
 namespace Avalonia.FFmpegVideoPlayer;
 
 /// <summary>
 /// A self-contained video player control with playback controls, seek bar, and volume control.
 /// Uses FFmpeg for cross-platform media playback including ARM64 macOS.
+/// Requires FFmpeg 8.x libraries (libavcodec.62) to be available.
 /// </summary>
 public partial class VideoPlayerControl : UserControl
 {
@@ -300,54 +301,53 @@ public partial class VideoPlayerControl : UserControl
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[VideoPlayerControl] Failed to initialize FFmpeg: {ex.Message}");
+            Debug.WriteLine($"[VideoPlayerControl] Failed to initialize FFmpeg: {ex.Message}");
         }
     }
 
     private void OnFrameReady(object? sender, FrameEventArgs e)
     {
-        Dispatcher.UIThread.Post(() =>
+        // Note: This is already called on the UI thread via Dispatcher.UIThread.Post in FFmpegMediaPlayer
+        try
         {
-            try
+            // Create or recreate bitmap if needed
+            if (_frameBitmap == null || 
+                _frameBitmap.PixelSize.Width != e.Width || 
+                _frameBitmap.PixelSize.Height != e.Height)
             {
-                // Create or recreate bitmap if needed
-                if (_frameBitmap == null || 
-                    _frameBitmap.PixelSize.Width != e.Width || 
-                    _frameBitmap.PixelSize.Height != e.Height)
-                {
-                    _frameBitmap = new WriteableBitmap(
-                        new PixelSize(e.Width, e.Height),
-                        new Vector(96, 96),
-                        Avalonia.Platform.PixelFormat.Bgra8888,
-                        Avalonia.Platform.AlphaFormat.Premul);
-                }
+                _frameBitmap = new WriteableBitmap(
+                    new PixelSize(e.Width, e.Height),
+                    new Vector(96, 96),
+                    Avalonia.Platform.PixelFormat.Bgra8888,
+                    Avalonia.Platform.AlphaFormat.Premul);
+            }
 
-                // Copy frame data to bitmap
-                using (var fb = _frameBitmap.Lock())
+            // Copy frame data to bitmap
+            using (var fb = _frameBitmap.Lock())
+            {
+                var sourceSpan = e.Data.AsSpan();
+                var destPtr = fb.Address;
+                
+                for (int y = 0; y < e.Height; y++)
                 {
-                    var sourceSpan = e.Data.AsSpan();
-                    var destPtr = fb.Address;
+                    var sourceOffset = y * e.Stride;
+                    var destOffset = y * fb.RowBytes;
+                    var rowLength = Math.Min(e.Width * 4, Math.Min(e.Stride, fb.RowBytes));
                     
-                    for (int y = 0; y < e.Height; y++)
-                    {
-                        var sourceOffset = y * e.Stride;
-                        var destOffset = y * fb.RowBytes;
-                        var rowLength = Math.Min(e.Width * 4, Math.Min(e.Stride, fb.RowBytes));
-                        
-                        Marshal.Copy(e.Data, sourceOffset, destPtr + destOffset, rowLength);
-                    }
+                    Marshal.Copy(e.Data, sourceOffset, destPtr + destOffset, rowLength);
                 }
+            }
 
-                if (_videoImage != null)
-                {
-                    _videoImage.Source = _frameBitmap;
-                }
-            }
-            catch (Exception ex)
+            if (_videoImage != null)
             {
-                Console.WriteLine($"[VideoPlayerControl] Frame render error: {ex.Message}");
+                _videoImage.Source = _frameBitmap;
+                _videoImage.InvalidateVisual();
             }
-        });
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[VideoPlayerControl] Frame render error: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -358,7 +358,7 @@ public partial class VideoPlayerControl : UserControl
     {
         if (_mediaPlayer == null)
         {
-            Console.WriteLine("[VideoPlayerControl] FFmpeg not initialized");
+            Debug.WriteLine("[VideoPlayerControl] FFmpeg not initialized");
             return;
         }
 

@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Threading;
 using OpenTK.Audio.OpenAL;
 
 namespace Avalonia.FFmpegVideoPlayer;
 
 /// <summary>
-/// Cross-platform audio player using OpenAL.
+/// Cross-platform audio player using OpenAL for low-latency audio playback.
+/// Handles sample format conversion and buffer management.
 /// </summary>
 public sealed class AudioPlayer : IDisposable
 {
@@ -162,7 +164,7 @@ public sealed class AudioPlayer : IDisposable
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[AudioPlayer] Error: {ex.Message}");
+                Debug.WriteLine($"[AudioPlayer] Error: {ex.Message}");
                 Thread.Sleep(10);
             }
         }

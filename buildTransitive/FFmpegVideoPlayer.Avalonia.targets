@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- 
+    Transitive targets - ensures FFmpeg native libraries are copied even for 
+    transitive package references (projects that reference projects that reference this package).
+  -->
+  <Import Project="..\build\FFmpegVideoPlayer.Avalonia.targets" />
+</Project>

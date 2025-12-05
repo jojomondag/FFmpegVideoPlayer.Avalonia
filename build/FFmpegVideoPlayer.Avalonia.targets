@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  
+  <!-- 
+    This targets file ensures FFmpeg native libraries are copied to the output directory
+    of consuming projects. The native libraries are platform-specific and located in
+    the runtimes folder following .NET conventions.
+  -->
+  
+  <PropertyGroup>
+    <FFmpegVideoPlayerRuntimesPath>$(MSBuildThisFileDirectory)..\runtimes\</FFmpegVideoPlayerRuntimesPath>
+  </PropertyGroup>
+
+  <!-- Copy all runtimes to output (allows runtime detection) -->
+  <Target Name="CopyFFmpegNativeLibraries" AfterTargets="Build">
+    <ItemGroup>
+      <AllFFmpegRuntimes Include="$(FFmpegVideoPlayerRuntimesPath)**\*.*" 
+                         Exclude="$(FFmpegVideoPlayerRuntimesPath)README.md" />
+    </ItemGroup>
+    
+    <Copy SourceFiles="@(AllFFmpegRuntimes)"
+          DestinationFiles="@(AllFFmpegRuntimes->'$(OutDir)runtimes\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(AllFFmpegRuntimes)' != ''" />
+  </Target>
+
+  <!-- Also copy during publish -->
+  <Target Name="CopyFFmpegNativeLibrariesOnPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <AllFFmpegRuntimes Include="$(FFmpegVideoPlayerRuntimesPath)**\*.*" 
+                         Exclude="$(FFmpegVideoPlayerRuntimesPath)README.md" />
+    </ItemGroup>
+    
+    <Copy SourceFiles="@(AllFFmpegRuntimes)"
+          DestinationFiles="@(AllFFmpegRuntimes->'$(PublishDir)runtimes\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(AllFFmpegRuntimes)' != ''" />
+  </Target>
+
+</Project>

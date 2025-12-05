@@ -12,6 +12,8 @@ namespace Avalonia.FFmpegVideoPlayer;
 /// </summary>
 internal static class FFmpegPathResolver
 {
+    private static bool _bindingsInitialized;
+
     /// <summary>
     /// Tries to find a bundled FFmpeg path under runtimes/&lt;rid&gt;/native and, if found,
     /// configures the process search path so the native loader can locate dependencies.
@@ -82,6 +84,35 @@ internal static class FFmpegPathResolver
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
             AddPathVariable("LD_LIBRARY_PATH", path);
+        }
+
+        // Initialize the dynamically loaded bindings after setting the path
+        InitializeBindings();
+    }
+
+    /// <summary>
+    /// Initializes the FFmpeg.AutoGen dynamic bindings.
+    /// Must be called after setting <see cref="ffmpeg.RootPath"/>.
+    /// </summary>
+    public static void InitializeBindings()
+    {
+        if (_bindingsInitialized)
+            return;
+
+        try
+        {
+            // FFmpeg.AutoGen 8.x uses DynamicallyLoadedBindings that must be initialized.
+            // This sets up lazy loading of all FFmpeg functions.
+            DynamicallyLoadedBindings.Initialize();
+            _bindingsInitialized = true;
+#if DEBUG
+            Console.WriteLine($"[FFmpegPathResolver] Bindings initialized (RootPath: {ffmpeg.RootPath})");
+#endif
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FFmpegPathResolver] Failed to initialize bindings: {ex.Message}");
+            throw;
         }
     }
 

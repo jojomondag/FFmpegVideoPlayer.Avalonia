@@ -1,69 +1,30 @@
 # FFmpegVideoPlayer.Avalonia
 
-An FFmpeg-based video player control for Avalonia UI with **full cross-platform support including ARM64 macOS (Apple Silicon)**.
+A **self-contained** FFmpeg video player control for Avalonia UI. FFmpeg 8.x libraries are **bundled** - no external installation required!
 
 [![NuGet](https://img.shields.io/nuget/v/FFmpegVideoPlayer.Avalonia.svg)](https://www.nuget.org/packages/FFmpegVideoPlayer.Avalonia/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-![Video Player Screenshot](https://raw.githubusercontent.com/jojomondag/FFmpegVideoPlayer.Avalonia/main/screenshot.png)
+## ✨ Features
 
-## Features
+- 🎬 Full-featured video player control
+- 📦 **Self-contained** - FFmpeg libraries bundled in the NuGet package
+- 🖥️ Cross-platform: Windows x64, macOS ARM64 (Apple Silicon)
+- 🎨 Customizable appearance via XAML properties
+- 🎛️ Built-in controls: Play/Pause, Stop, Seek, Volume, Mute
+- ⚡ Hardware-accelerated decoding
 
-- 🎬 Full-featured video player control for Avalonia
-- 🖥️ **True cross-platform** (Windows, macOS Intel, macOS ARM64, Linux)
-- 🍎 **Native Apple Silicon (M1/M2/M3) support** via FFmpeg
-- 🎨 Clean, modern UI with Material Design icons
-- ⚡ Uses FFmpeg.AutoGen for maximum codec support
-- 🎛️ Built-in controls: Play/Pause, Stop, Seek bar, Volume slider, Mute
-- 🔊 OpenAL-based audio playback
-
-## Installation
+## 📦 Installation
 
 ```bash
 dotnet add package FFmpegVideoPlayer.Avalonia
 ```
 
-### Self-contained FFmpeg (NuGet runtimes)
+That's it! The FFmpeg libraries are included in the package.
 
-To ship everything inside the NuGet and avoid external installs, place the FFmpeg binaries in the repo before packing:
+## 🚀 Quick Start
 
-- `runtimes/win-x64/native/*.dll`
-- `runtimes/win-x86/native/*.dll`
-- `runtimes/osx-arm64/native/*.dylib`
-- `runtimes/osx-x64/native/*.dylib`
-- `runtimes/linux-x64/native/*.so`
-- `runtimes/linux-arm64/native/*.so`
-
-They are copied to your build output and packed into the `.nupkg`; at runtime the control first loads from these folders. If nothing is bundled, it falls back to system detection/installation.
-
-### FFmpeg Installation (fallback)
-
-If you prefer system FFmpeg, the control can still auto-detect it:
-
-| Platform | Installation |
-|----------|-------------|
-| **macOS (Intel & ARM64)** | **Automatic via Homebrew!** ✅ |
-| **Windows** | `winget install ffmpeg` or `choco install ffmpeg` |
-| **Linux (Debian/Ubuntu)** | `sudo apt install ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev` |
-| **Linux (Fedora)** | `sudo dnf install ffmpeg ffmpeg-devel` |
-| **Linux (Arch)** | `sudo pacman -S ffmpeg` |
-
-### Platform Support
-
-| Platform | FFmpeg Source | Status |
-|----------|---------------|--------|
-| **macOS Intel (x64)** | Auto-install via Homebrew | ✅ **Zero config!** |
-| **macOS ARM64 (Apple Silicon)** | Auto-install via Homebrew | ✅ **Zero config!** |
-| **Windows (x64/x86/ARM64)** | winget/choco/manual | ✅ Tested |
-| **Linux (x64/ARM64)** | System package | ✅ Tested |
-
-> **Note:** On macOS, FFmpeg and Homebrew are automatically installed if not present!
-
-## Quick Start
-
-### Step 1: Add Material Icons to App.axaml
-
-**Important:** The video player uses Material Icons for its controls. You must add the `MaterialIconStyles` to your `App.axaml`:
+### 1. Add Material Icons to App.axaml
 
 ```xml
 <Application xmlns="https://github.com/avaloniaui"
@@ -72,82 +33,116 @@ If you prefer system FFmpeg, the control can still auto-detect it:
              x:Class="YourApp.App">
     <Application.Styles>
         <FluentTheme />
-        <!-- Required for video player icons -->
         <materialIcons:MaterialIconStyles />
     </Application.Styles>
 </Application>
 ```
 
-### Step 2: Initialize FFmpeg at Startup
-
-In your `Program.cs` or `App.axaml.cs`, initialize FFmpeg before creating any windows.
-
-**On macOS, FFmpeg is automatically installed via Homebrew if not found!**
+### 2. Initialize FFmpeg in Program.cs
 
 ```csharp
 using Avalonia.FFmpegVideoPlayer;
 
-public class Program
+public static void Main(string[] args)
 {
-    public static void Main(string[] args)
-    {
-        // Initialize FFmpeg - on macOS, auto-installs via Homebrew if needed!
-        // Set autoInstall: false to disable automatic installation
-        FFmpegInitializer.Initialize();
-        
-        BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
-    }
-
-    public static AppBuilder BuildAvaloniaApp()
-        => AppBuilder.Configure<App>()
-            .UsePlatformDetect()
-            .WithInterFont()
-            .LogToTrace();
+    FFmpegInitializer.Initialize();
+    BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
 }
 ```
 
-**Optional: Subscribe to status updates during initialization:**
-
-```csharp
-FFmpegInitializer.StatusChanged += (message) => Console.WriteLine(message);
-FFmpegInitializer.Initialize();
-// Output on macOS without FFmpeg:
-// "Initializing FFmpeg for macos-arm64..."
-// "FFmpeg not found. Installing via Homebrew (this may take a few minutes)..."
-// "FFmpeg installed successfully!"
-// "FFmpeg initialized successfully (libavcodec: 61.3.100)"
-```
-
-### Step 3: Add the VideoPlayerControl to your Window
+### 3. Add the Video Player to your Window
 
 ```xml
 <Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:ffmpeg="clr-namespace:Avalonia.FFmpegVideoPlayer;assembly=FFmpegVideoPlayer.Avalonia"
-        Title="My Video Player" Width="800" Height="600">
+        xmlns:ffmpeg="clr-namespace:Avalonia.FFmpegVideoPlayer;assembly=Avalonia.FFmpegVideoPlayer"
+        Title="Video Player">
     
-    <ffmpeg:VideoPlayerControl x:Name="VideoPlayer" />
+    <ffmpeg:VideoPlayerControl />
     
 </Window>
 ```
 
-### Step 4: Play a Video
+## 🎨 XAML Properties
 
-Use the built-in "Open" button, or load programmatically:
+All properties can be set directly in XAML:
 
-```csharp
-// Play a local file
-VideoPlayer.Open(@"C:\Videos\movie.mp4");
-
-// Or play from URL
-VideoPlayer.OpenUri(new Uri("https://example.com/video.mp4"));
+```xml
+<ffmpeg:VideoPlayerControl 
+    Source="/path/to/video.mp4"
+    AutoPlay="True"
+    Volume="80"
+    ShowControls="True"
+    ShowOpenButton="False"
+    ControlPanelBackground="#1a1a1a" />
 ```
 
-## Complete Example
+### Available Properties
 
-Here's a minimal working example:
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `Source` | `string` | `null` | Path to video file - automatically loads when set |
+| `AutoPlay` | `bool` | `False` | Auto-play when video is loaded |
+| `Volume` | `int` | `100` | Volume level (0-100) |
+| `ShowControls` | `bool` | `True` | Show/hide the control bar |
+| `ShowOpenButton` | `bool` | `True` | Show/hide the "Open" file button |
+| `ControlPanelBackground` | `IBrush` | `White` | Background color of the control bar |
 
-**MyApp.csproj:**
+### Styling Examples
+
+**Dark themed player:**
+```xml
+<ffmpeg:VideoPlayerControl 
+    ControlPanelBackground="#1a1a1a" />
+```
+
+**Embedded player (no file picker):**
+```xml
+<ffmpeg:VideoPlayerControl 
+    Source="C:\Videos\intro.mp4"
+    AutoPlay="True"
+    ShowOpenButton="False" />
+```
+
+**Transparent controls (overlay style):**
+```xml
+<ffmpeg:VideoPlayerControl 
+    ControlPanelBackground="Transparent" />
+```
+
+**Using theme resources:**
+```xml
+<ffmpeg:VideoPlayerControl 
+    ControlPanelBackground="{DynamicResource SystemControlBackgroundAltHighBrush}" />
+```
+
+## 💻 Programmatic Control
+
+```csharp
+// Open and play a video
+VideoPlayer.Open(@"C:\Videos\movie.mp4");
+VideoPlayer.Play();
+
+// Or use Source property (auto-loads)
+VideoPlayer.Source = @"C:\Videos\movie.mp4";
+VideoPlayer.AutoPlay = true;
+
+// Playback control
+VideoPlayer.Pause();
+VideoPlayer.Stop();
+VideoPlayer.Seek(0.5f);  // Seek to 50%
+
+// Volume control
+VideoPlayer.Volume = 50;
+VideoPlayer.ToggleMute();
+
+// Customize appearance
+VideoPlayer.ShowOpenButton = false;
+VideoPlayer.ControlPanelBackground = new SolidColorBrush(Color.Parse("#2d2d2d"));
+```
+
+## 📋 Complete Example
+
+**YourApp.csproj:**
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
@@ -169,7 +164,7 @@ Here's a minimal working example:
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
-             x:Class="MyApp.App">
+             x:Class="YourApp.App">
     <Application.Styles>
         <FluentTheme />
         <materialIcons:MaterialIconStyles />
@@ -177,12 +172,25 @@ Here's a minimal working example:
 </Application>
 ```
 
+**App.axaml.cs:**
+```csharp
+using Avalonia;
+using Avalonia.Markup.Xaml;
+
+namespace YourApp;
+
+public partial class App : Application
+{
+    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+}
+```
+
 **Program.cs:**
 ```csharp
 using Avalonia;
 using Avalonia.FFmpegVideoPlayer;
 
-namespace MyApp;
+namespace YourApp;
 
 class Program
 {
@@ -199,146 +207,81 @@ class Program
 }
 ```
 
-## Embedded Player (No Open Button)
-
-For scenarios where you want to play a specific video without the file browser, use the `Source` property and hide the Open button:
-
+**MainWindow.axaml:**
 ```xml
-<!-- XAML: Embedded player with custom background -->
-<ffmpeg:VideoPlayerControl 
-    Source="C:\Videos\intro.mp4"
-    AutoPlay="True"
-    ShowOpenButton="False"
-    ControlPanelBackground="#2d2d2d" />
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ffmpeg="clr-namespace:Avalonia.FFmpegVideoPlayer;assembly=Avalonia.FFmpegVideoPlayer"
+        x:Class="YourApp.MainWindow"
+        Title="Video Player" Width="800" Height="600">
+    
+    <ffmpeg:VideoPlayerControl 
+        x:Name="VideoPlayer"
+        ControlPanelBackground="#2d2d2d" />
+    
+</Window>
 ```
 
-Or set programmatically:
+## 📖 API Reference
 
-```csharp
-// Hide the Open button and set source
-VideoPlayer.ShowOpenButton = false;
-VideoPlayer.AutoPlay = true;
-VideoPlayer.Source = @"C:\Videos\movie.mp4";
-
-// Customize the control panel background
-VideoPlayer.ControlPanelBackground = new SolidColorBrush(Color.Parse("#1a1a1a"));
-```
-
-### Custom Control Panel Colors
-
-The control panel background can be customized to match your app's theme:
-
-```xml
-<!-- Dark theme -->
-<ffmpeg:VideoPlayerControl ControlPanelBackground="#1a1a1a" />
-
-<!-- Match your app's accent color -->
-<ffmpeg:VideoPlayerControl ControlPanelBackground="{DynamicResource SystemAccentColor}" />
-
-<!-- Transparent (overlay style) -->
-<ffmpeg:VideoPlayerControl ControlPanelBackground="Transparent" />
-```
-
-## API Reference
-
-### VideoPlayerControl Properties
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `Volume` | `int` | Volume level (0-100) |
-| `AutoPlay` | `bool` | Auto-play when media is loaded |
-| `ShowControls` | `bool` | Show/hide playback controls |
-| `ShowOpenButton` | `bool` | Show/hide the Open button (default: true) |
-| `Source` | `string` | Video source path - set to auto-load video |
-| `ControlPanelBackground` | `IBrush` | Background color of the control panel (default: White) |
-| `IsPlaying` | `bool` | Whether media is currently playing |
-| `Position` | `long` | Current playback position in milliseconds |
-| `Duration` | `long` | Total media duration in milliseconds |
-
-### VideoPlayerControl Methods
+### Methods
 
 | Method | Description |
 |--------|-------------|
-| `Open(string path)` | Open a local file |
-| `OpenUri(Uri uri)` | Open from URL |
+| `Open(string path)` | Open a video file |
+| `OpenUri(Uri uri)` | Open from URL or file URI |
 | `Play()` | Start/resume playback |
 | `Pause()` | Pause playback |
-| `Stop()` | Stop playback |
-| `Seek(float position)` | Seek to position (0.0-1.0) |
+| `Stop()` | Stop playback and reset position |
+| `Seek(float position)` | Seek to position (0.0 = start, 1.0 = end) |
 | `ToggleMute()` | Toggle audio mute |
 | `TogglePlayPause()` | Toggle between play and pause |
 
-### VideoPlayerControl Events
-
-| Event | Description |
-|-------|-------------|
-| `PlaybackStarted` | Fired when playback starts |
-| `PlaybackPaused` | Fired when playback is paused |
-| `PlaybackStopped` | Fired when playback stops |
-| `MediaEnded` | Fired when media reaches the end |
-
-### FFmpegInitializer Static Methods
-
-| Method | Description |
-|--------|-------------|
-| `Initialize(string? customPath, bool autoInstall)` | Initialize FFmpeg. On macOS, auto-installs via Homebrew if `autoInstall` is true (default) |
-| `InitializeAsync(string? customPath, bool autoInstall)` | Async version of Initialize |
-| `TryInitialize(string? customPath, out string? error, bool autoInstall)` | Try to initialize without throwing |
-| `CheckInstallation()` | Check FFmpeg installation status |
-| `GetInstallationInstructions()` | Get platform-specific install instructions |
-| `IsHomebrewInstalled()` | Check if Homebrew is installed (macOS only) |
-| `TryInstallFFmpegOnMacOS()` | Manually trigger FFmpeg installation via Homebrew |
-| `TryInstallFFmpegOnWindows()` | Manually trigger FFmpeg installation via winget |
-
-### FFmpegInitializer Properties
+### Read-only Properties
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `IsInitialized` | `bool` | Whether FFmpeg has been successfully initialized |
-| `FFmpegPath` | `string?` | Path to the FFmpeg libraries being used |
-| `PlatformInfo` | `string` | Current platform and architecture (e.g., "macos-arm64") |
-| `IsMacOS` | `bool` | Whether running on macOS |
-| `IsWindows` | `bool` | Whether running on Windows |
-| `IsLinux` | `bool` | Whether running on Linux |
-| `IsArm` | `bool` | Whether running on ARM architecture |
+| `IsPlaying` | `bool` | Whether video is currently playing |
+| `Position` | `long` | Current position in milliseconds |
+| `Duration` | `long` | Total duration in milliseconds |
 
-### FFmpegInitializer Events
+### Events
 
 | Event | Description |
 |-------|-------------|
-| `StatusChanged` | Fired with status messages during initialization (useful for showing progress) |
+| `PlaybackStarted` | Fired when playback begins |
+| `PlaybackPaused` | Fired when playback is paused |
+| `PlaybackStopped` | Fired when playback stops |
+| `MediaEnded` | Fired when video reaches the end |
 
-## Migration from 1.x Version
+## 🌍 Platform Support
 
-If you're migrating from the legacy 1.x version of this library:
+| Platform | Status |
+|----------|--------|
+| Windows x64 | ✅ Bundled |
+| macOS ARM64 (M1/M2/M3/M4) | ✅ Bundled |
+| macOS x64 | 🔧 Add libraries to `runtimes/osx-x64/native/` |
+| Linux x64 | 🔧 Add libraries to `runtimes/linux-x64/native/` |
 
-1. Update the package: `dotnet add package FFmpegVideoPlayer.Avalonia`
-2. **macOS users: No setup needed!** FFmpeg auto-installs via Homebrew
-3. **Windows/Linux users:** Install FFmpeg (see Installation section)
-4. Replace any old initialization call from 1.x with `FFmpegInitializer.Initialize()` in your `Program.cs`
-5. The rest of the API remains the same!
+## 🔧 Troubleshooting
 
-## Troubleshooting
+**Video doesn't play:**
+- Ensure `FFmpegInitializer.Initialize()` is called before creating windows
+- Check console output for FFmpeg initialization errors
 
-### FFmpeg not found
-On macOS, FFmpeg should auto-install. If it fails, run `FFmpegInitializer.GetInstallationInstructions()` for manual steps.
+**No audio:**
+- OpenAL is required for audio. On Linux: `sudo apt install libopenal1`
 
-### No audio playback
-Ensure OpenAL is installed:
-- **Windows**: Usually included with graphics drivers
-- **macOS**: Included with the system
-- **Linux**: `sudo apt install libopenal1`
+**Player shows black screen:**
+- Some video codecs may not be supported. Try a different video file.
 
-### Video plays but no picture
-This can happen with certain codecs. Ensure you have a complete FFmpeg installation with all codecs enabled.
-
-## License
+## 📄 License
 
 MIT License - see [LICENSE](LICENSE) for details.
 
-## Credits
+## 🙏 Credits
 
-- [FFmpeg](https://ffmpeg.org/) - The leading multimedia framework
-- [FFmpeg.AutoGen](https://github.com/Ruslan-B/FFmpeg.AutoGen) - FFmpeg bindings for .NET
-- [OpenTK](https://opentk.net/) - OpenAL bindings for audio playback
-- [Material.Icons.Avalonia](https://github.com/SKProCH/Material.Icons.Avalonia) - Material Design icons
+- [FFmpeg](https://ffmpeg.org/) - Multimedia framework
+- [FFmpeg.AutoGen](https://github.com/Ruslan-B/FFmpeg.AutoGen) - .NET bindings
+- [OpenTK](https://opentk.net/) - Audio playback
+- [Material.Icons.Avalonia](https://github.com/SKProCH/Material.Icons.Avalonia) - UI icons

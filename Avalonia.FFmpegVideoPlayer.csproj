@@ -7,20 +7,19 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     
     <!-- NuGet Package Properties -->
-    <PackageId>Avalonia.FFmpegVideoPlayer</PackageId>
+    <PackageId>FFmpegVideoPlayer.Avalonia</PackageId>
     <AssemblyName>Avalonia.FFmpegVideoPlayer</AssemblyName>
     <RootNamespace>Avalonia.FFmpegVideoPlayer</RootNamespace>
-    <Version>2.0.0</Version>
+    <Version>2.1.1</Version>
     <Authors>jojomondag</Authors>
     <Company>jojomondag</Company>
-    <Description>An FFmpeg-based video player control for Avalonia UI. Fully cross-platform including Windows, macOS (Intel and ARM64), and Linux. Requires FFmpeg 7.x to be installed on the system.</Description>
-    <PackageReleaseNotes>v2.0.0: Migrated to an FFmpeg-based backend for better cross-platform support including macOS ARM64.</PackageReleaseNotes>
-    <PackageTags>avalonia;ffmpeg;video;player;media;cross-platform;arm64</PackageTags>
+    <Description>A self-contained FFmpeg-based video player control for Avalonia UI. Bundles FFmpeg 8.x native libraries - no external FFmpeg installation required. Supports Windows x64, macOS ARM64/x64, and Linux.</Description>
+    <PackageReleaseNotes>v2.1.1: Fixed build targets file for consuming projects.</PackageReleaseNotes>
+    <PackageTags>avalonia;ffmpeg;video;player;media;cross-platform;arm64;self-contained</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/jojomondag/FFmpegVideoPlayer.Avalonia</PackageProjectUrl>
     <RepositoryUrl>https://github.com/jojomondag/FFmpegVideoPlayer.Avalonia</RepositoryUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <RuntimeIdentifiers>win-x64;win-x86;osx-x64;osx-arm64;linux-x64;linux-arm64</RuntimeIdentifiers>
     
     <!-- Generate XML documentation -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -32,26 +31,60 @@
     <PackageReference Include="Material.Icons.Avalonia" Version="2.4.1" />
     
     <!-- FFmpeg bindings for .NET - cross-platform including ARM64 -->
-    <PackageReference Include="FFmpeg.AutoGen" Version="7.1.1" />
+    <!-- Using version 8.0.0 which expects FFmpeg 8.x libraries (libavcodec.62) -->
+    <PackageReference Include="FFmpeg.AutoGen" Version="8.0.0" />
     
-    <!-- OpenAL for audio playback - cross-platform -->
+    <!-- OpenTK for audio playback - cross-platform -->
     <PackageReference Include="OpenTK" Version="4.8.2" />
   </ItemGroup>
 
   <!-- Include README in package -->
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="" />
-    <None Include="runtimes/**" Pack="true" PackagePath="runtimes/" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <!-- Ensure packaged FFmpeg runtimes are copied to the build output for local testing -->
+  <!-- 
+    Native FFmpeg libraries - using contentFiles for automatic deployment.
+    The runtimes folder structure follows .NET conventions for native libraries.
+  -->
+  
+  <!-- Windows x64 native libraries -->
+  <ItemGroup>
+    <None Include="runtimes/win-x64/native/*.dll" Pack="true" PackagePath="runtimes/win-x64/native/" />
+  </ItemGroup>
+  
+  <!-- macOS ARM64 native libraries -->
+  <ItemGroup>
+    <None Include="runtimes/osx-arm64/native/*.dylib" Pack="true" PackagePath="runtimes/osx-arm64/native/" />
+  </ItemGroup>
+  
+  <!-- macOS x64 native libraries (if available) -->
+  <ItemGroup Condition="Exists('runtimes/osx-x64/native/')">
+    <None Include="runtimes/osx-x64/native/*.dylib" Pack="true" PackagePath="runtimes/osx-x64/native/" />
+  </ItemGroup>
+  
+  <!-- Linux x64 native libraries (if available) -->
+  <ItemGroup Condition="Exists('runtimes/linux-x64/native/')">
+    <None Include="runtimes/linux-x64/native/*.so*" Pack="true" PackagePath="runtimes/linux-x64/native/" />
+  </ItemGroup>
+
+  <!-- 
+    Build targets file to ensure native libraries are copied to output directory
+    when consuming projects build. This is packaged as a .targets file.
+  -->
+  <ItemGroup>
+    <None Include="build/FFmpegVideoPlayer.Avalonia.targets" Pack="true" PackagePath="build/" />
+    <None Include="buildTransitive/FFmpegVideoPlayer.Avalonia.targets" Pack="true" PackagePath="buildTransitive/" />
+  </ItemGroup>
+
+  <!-- Copy native libraries to output for local development/testing -->
   <Target Name="CopyBundledFFmpeg" AfterTargets="Build">
     <ItemGroup>
-      <NativeRuntimeFiles Include="runtimes\**\*.*" />
+      <NativeRuntimeFiles Include="runtimes/**/*.*" Exclude="runtimes/README.md" />
     </ItemGroup>
     <Copy SourceFiles="@(NativeRuntimeFiles)"
           DestinationFiles="@(NativeRuntimeFiles->'$(OutDir)%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true"
-          Condition=" '@(NativeRuntimeFiles)' != '' " />
+          Condition="'@(NativeRuntimeFiles)' != ''" />
   </Target>
 </Project>
