@@ -13,8 +13,8 @@
     <Version>2.1.2</Version>
     <Authors>jojomondag</Authors>
     <Company>jojomondag</Company>
-    <Description>A self-contained FFmpeg-based video player control for Avalonia UI. Bundles FFmpeg 8.x native libraries - no external FFmpeg installation required. Supports Windows x64, macOS ARM64/x64, and Linux.</Description>
-    <PackageReleaseNotes>v2.1.2: Improved UI - volume icon is now clickable to toggle mute, removed separate mute button.</PackageReleaseNotes>
+    <Description>Self-contained FFmpeg video player for Avalonia UI. FFmpeg libraries bundled - no installation required.</Description>
+    <PackageReleaseNotes>v2.1.2: Volume icon now toggles mute.</PackageReleaseNotes>
     <PackageTags>avalonia;ffmpeg;video;player;media;cross-platform;arm64;self-contained</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/jojomondag/FFmpegVideoPlayer.Avalonia</PackageProjectUrl>
