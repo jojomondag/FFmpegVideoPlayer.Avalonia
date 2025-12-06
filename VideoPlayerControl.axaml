@@ -61,7 +61,7 @@
                 </Grid>
                 
                 <!-- Playback Controls -->
-                <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto">
+                <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto">
                     <!-- Open File Button -->
                     <Button Name="OpenButton" Grid.Column="0" Margin="0,0,5,0"
                             Classes="mediaButton" Click="OnOpenClick">
@@ -89,19 +89,16 @@
                         </StackPanel>
                     </Button>
                     
-                    <!-- Mute Button -->
-                    <Button Name="MuteButton" Grid.Column="3" Width="40" Margin="0,0,5,0"
-                            Classes="mediaButton" Click="OnMuteClick">
+                    <!-- Spacer -->
+                    <Panel Grid.Column="3"/>
+                    
+                    <!-- Volume Icon (clickable to toggle mute) -->
+                    <Button Name="VolumeButton" Grid.Column="4" Padding="4" Margin="0,0,5,0"
+                            Background="Transparent" BorderThickness="0" Click="OnMuteClick"
+                            VerticalAlignment="Center" Cursor="Hand">
                         <mi:MaterialIcon Name="VolumeIcon" Kind="VolumeHigh" Width="20" Height="20" Foreground="#333333"/>
                     </Button>
-                    
-                    <!-- Spacer -->
-                    <Panel Grid.Column="4"/>
-                    
-                    <!-- Volume Slider -->
-                    <mi:MaterialIcon Grid.Column="5" Kind="VolumeHigh" Width="18" Height="18"
-                                     VerticalAlignment="Center" Margin="0,0,5,0" Foreground="#333333"/>
-                    <Slider Name="VolumeSlider" Grid.Column="6" 
+                    <Slider Name="VolumeSlider" Grid.Column="5" 
                             Width="100" Minimum="0" Maximum="100" Value="100"
                             VerticalAlignment="Center"/>
                 </Grid>

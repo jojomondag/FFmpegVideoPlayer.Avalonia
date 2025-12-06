@@ -1,0 +1,27 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ffmpeg="clr-namespace:Avalonia.FFmpegVideoPlayer;assembly=Avalonia.FFmpegVideoPlayer"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+        x:Class="FFmpegVideoPlayerExample.MainWindow"
+        Title="FFmpeg Video Player Example" 
+        Width="900" Height="700"
+        MinWidth="640" MinHeight="480">
+    
+    <Grid RowDefinitions="Auto,*">
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#2d2d2d" Padding="15">
+            <TextBlock Text="FFmpegVideoPlayer.Avalonia Example" 
+                       FontSize="18" 
+                       FontWeight="SemiBold"
+                       Foreground="White"
+                       HorizontalAlignment="Center"/>
+        </Border>
+        
+        <!-- Video Player Control -->
+        <ffmpeg:VideoPlayerControl x:Name="VideoPlayer" 
+                                   Grid.Row="1"
+                                   Margin="10"/>
+    </Grid>
+</Window>

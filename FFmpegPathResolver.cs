@@ -109,9 +109,8 @@ internal static class FFmpegPathResolver
             Console.WriteLine($"[FFmpegPathResolver] Bindings initialized (RootPath: {ffmpeg.RootPath})");
 #endif
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"[FFmpegPathResolver] Failed to initialize bindings: {ex.Message}");
             throw;
         }
     }

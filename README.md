@@ -5,6 +5,8 @@ A **self-contained** FFmpeg video player control for Avalonia UI. FFmpeg 8.x lib
 [![NuGet](https://img.shields.io/nuget/v/FFmpegVideoPlayer.Avalonia.svg)](https://www.nuget.org/packages/FFmpegVideoPlayer.Avalonia/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+![FFmpegVideoPlayer Preview](images/Preview1.png)
+
 ## ✨ Features
 
 - 🎬 Full-featured video player control
@@ -21,6 +23,16 @@ dotnet add package FFmpegVideoPlayer.Avalonia
 ```
 
 That's it! The FFmpeg libraries are included in the package.
+
+## 🎮 Try the Example
+
+The repository includes a complete working example:
+
+```bash
+git clone https://github.com/jojomondag/FFmpegVideoPlayer.Avalonia.git
+cd FFmpegVideoPlayer.Avalonia/examples/FFmpegVideoPlayerExample
+dotnet run
+```
 
 ## 🚀 Quick Start
 
@@ -154,7 +166,7 @@ VideoPlayer.ControlPanelBackground = new SolidColorBrush(Color.Parse("#2d2d2d"))
     <PackageReference Include="Avalonia" Version="11.3.6" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.6" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.6" />
-    <PackageReference Include="FFmpegVideoPlayer.Avalonia" Version="2.0.0" />
+    <PackageReference Include="FFmpegVideoPlayer.Avalonia" Version="2.1.2" />
   </ItemGroup>
 </Project>
 ```

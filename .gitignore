@@ -45,8 +45,5 @@ Desktop.ini
 [Tt]est[Rr]esult*/
 [Bb]uild[Ll]og.*
 
-# VLC libraries (should be copied at build time, not committed)
-**/vlc/
-
 # Publish output
 publish/

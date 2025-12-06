@@ -1,7 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Threading;
-using Avalonia.Platform;
 using Avalonia.Threading;
 using FFmpeg.AutoGen;
 
@@ -134,14 +133,12 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
             {
                 if (ffmpeg.avformat_open_input(formatContext, path, null, null) != 0)
                 {
-                    Console.WriteLine("[FFmpegMediaPlayer] Failed to open input file");
                     return false;
                 }
             }
 
             if (ffmpeg.avformat_find_stream_info(_formatContext, null) < 0)
             {
-                Console.WriteLine("[FFmpegMediaPlayer] Failed to find stream info");
                 CloseInternal();
                 return false;
             }
@@ -162,7 +159,6 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
 
             if (_videoStreamIndex < 0 && _audioStreamIndex < 0)
             {
-                Console.WriteLine("[FFmpegMediaPlayer] No video or audio stream found");
                 CloseInternal();
                 return false;
             }
@@ -170,14 +166,12 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
             // Initialize video decoder
             if (_videoStreamIndex >= 0 && !InitializeVideoDecoder())
             {
-                Console.WriteLine("[FFmpegMediaPlayer] Failed to initialize video decoder");
                 _videoStreamIndex = -1;
             }
 
             // Initialize audio decoder
             if (_audioStreamIndex >= 0 && !InitializeAudioDecoder())
             {
-                Console.WriteLine("[FFmpegMediaPlayer] Failed to initialize audio decoder");
                 _audioStreamIndex = -1;
             }
 
@@ -209,7 +203,6 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
         var codec = ffmpeg.avcodec_find_decoder(codecParams->codec_id);
         if (codec == null)
         {
-            Console.WriteLine("[FFmpegMediaPlayer] Video codec not found");
             return false;
         }
 
@@ -277,7 +270,6 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
         var codec = ffmpeg.avcodec_find_decoder(codecParams->codec_id);
         if (codec == null)
         {
-            Console.WriteLine("[FFmpegMediaPlayer] Audio codec not found");
             return false;
         }
 
@@ -300,9 +292,8 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
             _audioPlayer = new AudioPlayer(sampleRate, channels);
             _audioPlayer.SetVolume(_volume / 100f);
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"[FFmpegMediaPlayer] Failed to initialize audio player: {ex.Message}");
             _audioPlayer = null;
         }
 
@@ -475,7 +466,6 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
         var sendResult = ffmpeg.avcodec_send_packet(_videoCodecContext, _packet);
         if (sendResult < 0)
         {
-            Console.WriteLine($"[FFmpegMediaPlayer] avcodec_send_packet failed: {sendResult}");
             return;
         }
 
