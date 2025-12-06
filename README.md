@@ -5,7 +5,7 @@ Self-contained FFmpeg video player for Avalonia UI. FFmpeg libraries bundled - n
 [![NuGet](https://img.shields.io/nuget/v/FFmpegVideoPlayer.Avalonia.svg)](https://www.nuget.org/packages/FFmpegVideoPlayer.Avalonia/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-![Preview](images/Preview1.png)
+![Preview](https://raw.githubusercontent.com/jojomondag/FFmpegVideoPlayer.Avalonia/main/images/Preview1.png)
 
 ## Installation
 
