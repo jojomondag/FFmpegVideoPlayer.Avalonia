@@ -10,11 +10,11 @@
     <PackageId>FFmpegVideoPlayer.Avalonia</PackageId>
     <AssemblyName>Avalonia.FFmpegVideoPlayer</AssemblyName>
     <RootNamespace>Avalonia.FFmpegVideoPlayer</RootNamespace>
-    <Version>2.1.2</Version>
+    <Version>2.1.3</Version>
     <Authors>jojomondag</Authors>
     <Company>jojomondag</Company>
     <Description>Self-contained FFmpeg video player for Avalonia UI. FFmpeg libraries bundled - no installation required.</Description>
-    <PackageReleaseNotes>v2.1.2: Volume icon now toggles mute.</PackageReleaseNotes>
+    <PackageReleaseNotes>v2.1.3: Reduced package size.</PackageReleaseNotes>
     <PackageTags>avalonia;ffmpeg;video;player;media;cross-platform;arm64;self-contained</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/jojomondag/FFmpegVideoPlayer.Avalonia</PackageProjectUrl>
