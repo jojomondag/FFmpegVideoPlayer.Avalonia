@@ -9,19 +9,33 @@
         Width="900" Height="700"
         MinWidth="640" MinHeight="480">
     
-    <Grid RowDefinitions="Auto,*">
+    <Grid RowDefinitions="Auto,*,Auto">
         <!-- Header -->
         <Border Grid.Row="0" Background="#2d2d2d" Padding="15">
-            <TextBlock Text="FFmpegVideoPlayer.Avalonia Example" 
-                       FontSize="18" 
-                       FontWeight="SemiBold"
-                       Foreground="White"
-                       HorizontalAlignment="Center"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="20">
+                <TextBlock Text="FFmpegVideoPlayer.Avalonia Example" 
+                           FontSize="18" 
+                           FontWeight="SemiBold"
+                           Foreground="White"
+                           VerticalAlignment="Center"/>
+                <CheckBox x:Name="ShowControlsCheckBox" 
+                          Content="Show Controls" 
+                          IsChecked="True" 
+                          Foreground="White"
+                          VerticalAlignment="Center"/>
+                <CheckBox x:Name="TransparentBgCheckBox" 
+                          Content="Transparent Background" 
+                          IsChecked="False" 
+                          Foreground="White"
+                          VerticalAlignment="Center"/>
+            </StackPanel>
         </Border>
         
         <!-- Video Player Control -->
-        <ffmpeg:VideoPlayerControl x:Name="VideoPlayer" 
-                                   Grid.Row="1"
-                                   Margin="10"/>
+        <Border Grid.Row="1" Background="#1a1a2e" Margin="10">
+            <ffmpeg:VideoPlayerControl x:Name="VideoPlayer" 
+                                       ShowControls="True"
+                                       VideoBackground="Black"/>
+        </Border>
     </Grid>
 </Window>

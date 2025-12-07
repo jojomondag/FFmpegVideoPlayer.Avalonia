@@ -40,7 +40,7 @@
     
     <Grid RowDefinitions="*,Auto">
         <!-- Video View - Using Image control for FFmpeg decoded frames -->
-        <Border Grid.Row="0" Background="Black">
+        <Border Name="VideoBorder" Grid.Row="0" Background="Black">
             <Image Name="VideoImage" Stretch="Uniform" />
         </Border>
         

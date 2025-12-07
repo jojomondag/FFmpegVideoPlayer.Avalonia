@@ -33,6 +33,7 @@ public partial class VideoPlayerControl : UserControl
     private int _previousVolume = 100;
     private bool _isInitialized;
     private Border? _controlPanelBorder;
+    private Border? _videoBorder;
     private Button? _openButton;
     private WriteableBitmap? _frameBitmap;
 
@@ -73,6 +74,12 @@ public partial class VideoPlayerControl : UserControl
         AvaloniaProperty.Register<VideoPlayerControl, Media.IBrush?>(nameof(ControlPanelBackground), null);
 
     /// <summary>
+    /// Defines the VideoBackground property.
+    /// </summary>
+    public static readonly StyledProperty<Media.IBrush?> VideoBackgroundProperty =
+        AvaloniaProperty.Register<VideoPlayerControl, Media.IBrush?>(nameof(VideoBackground), Media.Brushes.Black);
+
+    /// <summary>
     /// Gets or sets the volume (0-100).
     /// </summary>
     public int Volume
@@ -107,7 +114,14 @@ public partial class VideoPlayerControl : UserControl
     public bool ShowControls
     {
         get => GetValue(ShowControlsProperty);
-        set => SetValue(ShowControlsProperty, value);
+        set
+        {
+            SetValue(ShowControlsProperty, value);
+            if (_controlPanelBorder != null)
+            {
+                _controlPanelBorder.IsVisible = value;
+            }
+        }
     }
 
     /// <summary>
@@ -137,6 +151,16 @@ public partial class VideoPlayerControl : UserControl
     {
         get => GetValue(ControlPanelBackgroundProperty);
         set => SetValue(ControlPanelBackgroundProperty, value);
+    }
+
+    /// <summary>
+    /// Gets or sets the background brush for the video area.
+    /// Default is Black. Set to Transparent or any other brush to customize.
+    /// </summary>
+    public Media.IBrush? VideoBackground
+    {
+        get => GetValue(VideoBackgroundProperty);
+        set => SetValue(VideoBackgroundProperty, value);
     }
 
     /// <summary>
@@ -190,7 +214,18 @@ public partial class VideoPlayerControl : UserControl
         _playPauseText = this.FindControl<TextBlock>("PlayPauseText");
         _volumeIcon = this.FindControl<MaterialIcon>("VolumeIcon");
         _controlPanelBorder = this.FindControl<Border>("ControlPanelBorder");
+        _videoBorder = this.FindControl<Border>("VideoBorder");
         _openButton = this.FindControl<Button>("OpenButton");
+
+        // Apply initial visibility based on properties
+        if (_controlPanelBorder != null)
+        {
+            _controlPanelBorder.IsVisible = ShowControls;
+        }
+        if (_openButton != null)
+        {
+            _openButton.IsVisible = ShowOpenButton;
+        }
 
         // Setup seek bar events
         if (_seekBar != null)
@@ -242,6 +277,20 @@ public partial class VideoPlayerControl : UserControl
                 _controlPanelBorder.Background = brush;
             }
         }
+        else if (e.Property == VideoBackgroundProperty)
+        {
+            if (_videoBorder != null && e.NewValue is Media.IBrush brush)
+            {
+                _videoBorder.Background = brush;
+            }
+        }
+        else if (e.Property == ShowControlsProperty)
+        {
+            if (_controlPanelBorder != null)
+            {
+                _controlPanelBorder.IsVisible = (bool)(e.NewValue ?? true);
+            }
+        }
     }
 
     private void OnAttachedToVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
@@ -284,9 +333,17 @@ public partial class VideoPlayerControl : UserControl
             {
                 _openButton.IsVisible = ShowOpenButton;
             }
-            if (_controlPanelBorder != null && ControlPanelBackground != null)
+            if (_controlPanelBorder != null)
             {
-                _controlPanelBorder.Background = ControlPanelBackground;
+                _controlPanelBorder.IsVisible = ShowControls;
+                if (ControlPanelBackground != null)
+                {
+                    _controlPanelBorder.Background = ControlPanelBackground;
+                }
+            }
+            if (_videoBorder != null && VideoBackground != null)
+            {
+                _videoBorder.Background = VideoBackground;
             }
             
             // Load source if set
