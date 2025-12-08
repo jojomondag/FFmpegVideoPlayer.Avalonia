@@ -47,7 +47,7 @@ cd FFmpegVideoPlayer.Avalonia/examples/FFmpegVideoPlayerExample
 dotnet run
 ```
 
-## VideoPlayerControl API
+## FFmpegMediaPlayer API
 
 ### Properties
 
@@ -104,112 +104,6 @@ When `EnableKeyboardShortcuts` is `true`:
 | `Down Arrow` | Decrease volume by 5 |
 | `M` | Toggle mute |
 
-## FFmpegMediaPlayer API
-
-For advanced scenarios requiring custom UI or direct frame access:
-
-### Properties
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `IsPlaying` | `bool` | Whether media is currently playing (read-only) |
-| `Position` | `float` | Current position as percentage (0.0 to 1.0, read-only) |
-| `Length` | `long` | Total duration in milliseconds (read-only) |
-| `Volume` | `int` | Volume level (0-100) |
-| `VideoWidth` | `int` | Video frame width (read-only) |
-| `VideoHeight` | `int` | Video frame height (read-only) |
-
-### Methods
-
-| Method | Parameters | Returns | Description |
-|--------|------------|---------|-------------|
-| `Open(string path)` | `path`: File path or URL | `bool` | Opens media file, returns true if successful |
-| `Play()` | - | - | Starts or resumes playback |
-| `Pause()` | - | - | Pauses playback |
-| `Stop()` | - | - | Stops playback and resets to beginning |
-| `Seek(float positionPercent)` | `positionPercent`: 0.0 to 1.0 | - | Seeks to specific position |
-| `Close()` | - | - | Closes current media and releases resources |
-| `Dispose()` | - | - | Disposes the player and all resources |
-
-### Events
-
-| Event | EventArgs | Description |
-|-------|-----------|-------------|
-| `Playing` | `EventArgs` | Raised when playback starts |
-| `Paused` | `EventArgs` | Raised when playback is paused |
-| `Stopped` | `EventArgs` | Raised when playback is stopped |
-| `EndReached` | `EventArgs` | Raised when media reaches the end |
-| `PositionChanged` | `PositionChangedEventArgs` | Raised during playback with position updates |
-| `LengthChanged` | `LengthChangedEventArgs` | Raised when media duration becomes known |
-| `FrameReady` | `FrameEventArgs` | Raised when a new video frame is available |
-
-### FrameEventArgs Properties
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `Data` | `byte[]` | BGRA pixel data |
-| `Width` | `int` | Frame width in pixels |
-| `Height` | `int` | Frame height in pixels |
-| `Stride` | `int` | Bytes per row |
-| `DataLength` | `int` | Total data length in bytes |
-
-## Control-less Usage (Custom UI)
-
-For advanced scenarios like live wallpapers or custom video UIs, you can use `FFmpegMediaPlayer` directly and build your own controls:
-
-```csharp
-using Avalonia.FFmpegVideoPlayer;
-
-// Initialize FFmpeg once at startup
-FFmpegInitializer.Initialize();
-
-// Create player instance
-var player = new FFmpegMediaPlayer();
-
-// Subscribe to events
-player.FrameReady += (s, e) =>
-{
-    // e.Data contains BGRA pixel data
-    // e.Width, e.Height, e.Stride for frame dimensions
-    // Render to your own Image control or OpenGL surface
-};
-
-player.PositionChanged += (s, e) => 
-{
-    // e.Position is 0.0 to 1.0
-    // Update your custom seek bar
-};
-
-player.Playing += (s, e) => { /* Update UI */ };
-player.Paused += (s, e) => { /* Update UI */ };
-player.EndReached += (s, e) => { /* Handle loop or next video */ };
-
-// Control playback
-player.Open("video.mp4");
-player.Play();
-player.Pause();
-player.Seek(0.5f); // Seek to 50%
-player.Volume = 75; // 0-100
-
-// Properties
-bool isPlaying = player.IsPlaying;
-long durationMs = player.Length;
-float position = player.Position; // 0.0 to 1.0
-
-// Cleanup
-player.Dispose();
-```
-
-### Minimal Control-less Example
-
-```xml
-<!-- Just the video, no controls -->
-<ffmpeg:VideoPlayerControl ShowControls="False" 
-                           ShowOpenButton="False"
-                           VideoBackground="Transparent"
-                           Source="background.mp4"
-                           AutoPlay="True" />
-```
 
 ## Platform Support
 
