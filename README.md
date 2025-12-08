@@ -56,7 +56,7 @@ dotnet run
 | `Source` | `string?` | `null` | Video file path or URL |
 | `AutoPlay` | `bool` | `false` | Auto-play when media is loaded |
 | `Volume` | `int` | `100` | Volume level (0-100) |
-| `ShowControls` | `bool` | `true` | Show/hide control bar |
+| `ShowBuiltInControls` | `bool` | `true` | Show/hide control bar |
 | `ShowOpenButton` | `bool` | `true` | Show/hide file picker button |
 | `ControlPanelBackground` | `IBrush?` | `White` | Control bar background brush |
 | `VideoBackground` | `IBrush?` | `Black` | Video area background (set to `Transparent` for overlays) |
