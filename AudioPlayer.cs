@@ -198,7 +198,6 @@ public sealed class AudioPlayer : IDisposable
         }
     }
 
-    private static int _queuedBufferCount = 0;
     private bool _hasStartedOnce = false;
     
     private void AudioLoop()
@@ -224,12 +223,6 @@ public sealed class AudioPlayer : IDisposable
                 {
                     AL.BufferData(buffer, ALFormat.Stereo16, pcmData, _sampleRate);
                     AL.SourceQueueBuffer(_source, buffer);
-                    
-                    _queuedBufferCount++;
-                    if (_queuedBufferCount <= 5 || _queuedBufferCount % 100 == 0)
-                    {
-                        Debug.WriteLine($"[AudioPlayer] Queued S16 buffer #{_queuedBufferCount}: {pcmData.Length} samples");
-                    }
                 }
 
                 // Queue float samples (fallback - convert to S16)
@@ -246,12 +239,6 @@ public sealed class AudioPlayer : IDisposable
                     var format = _channels == 1 ? ALFormat.Mono16 : ALFormat.Stereo16;
                     AL.BufferData(buffer, format, pcmData, _sampleRate);
                     AL.SourceQueueBuffer(_source, buffer);
-                    
-                    _queuedBufferCount++;
-                    if (_queuedBufferCount <= 5 || _queuedBufferCount % 100 == 0)
-                    {
-                        Debug.WriteLine($"[AudioPlayer] Queued float buffer #{_queuedBufferCount}: {pcmData.Length} samples, format={format}");
-                    }
                 }
 
                 // Start or resume playback

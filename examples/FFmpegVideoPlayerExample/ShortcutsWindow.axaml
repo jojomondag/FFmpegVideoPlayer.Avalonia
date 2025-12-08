@@ -1,0 +1,32 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="300"
+        x:Class="FFmpegVideoPlayerExample.ShortcutsWindow"
+        Title="Keyboard Shortcuts"
+        Width="400" Height="300"
+        WindowStartupLocation="CenterOwner">
+    <StackPanel Margin="20" Spacing="10">
+        <TextBlock Text="Keyboard Shortcuts" FontSize="20" FontWeight="Bold" Margin="0,0,0,10"/>
+        
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Space" FontWeight="Bold" Margin="0,0,20,5"/>
+            <TextBlock Grid.Row="0" Grid.Column="1" Text="Play / Pause"/>
+            
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Left / Right" FontWeight="Bold" Margin="0,0,20,5"/>
+            <TextBlock Grid.Row="1" Grid.Column="1" Text="Seek -/+ 5 seconds"/>
+            
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="Ctrl + Left / Right" FontWeight="Bold" Margin="0,0,20,5"/>
+            <TextBlock Grid.Row="2" Grid.Column="1" Text="Seek -/+ 30 seconds"/>
+            
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="Up / Down" FontWeight="Bold" Margin="0,0,20,5"/>
+            <TextBlock Grid.Row="3" Grid.Column="1" Text="Volume Up / Down"/>
+            
+            <TextBlock Grid.Row="4" Grid.Column="0" Text="M" FontWeight="Bold" Margin="0,0,20,5"/>
+            <TextBlock Grid.Row="4" Grid.Column="1" Text="Mute / Unmute"/>
+        </Grid>
+        
+        <Button Content="Close" HorizontalAlignment="Center" Margin="0,20,0,0" Click="OnCloseClick"/>
+    </StackPanel>
+</Window>

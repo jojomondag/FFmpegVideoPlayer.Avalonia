@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
@@ -86,6 +87,12 @@ public partial class VideoPlayerControl : UserControl
     /// </summary>
     public static readonly StyledProperty<Media.Stretch> VideoStretchProperty =
         AvaloniaProperty.Register<VideoPlayerControl, Media.Stretch>(nameof(VideoStretch), Media.Stretch.Uniform);
+
+    /// <summary>
+    /// Defines the EnableKeyboardShortcuts property.
+    /// </summary>
+    public static readonly StyledProperty<bool> EnableKeyboardShortcutsProperty =
+        AvaloniaProperty.Register<VideoPlayerControl, bool>(nameof(EnableKeyboardShortcuts), true);
 
     /// <summary>
     /// Gets or sets the volume (0-100).
@@ -182,6 +189,16 @@ public partial class VideoPlayerControl : UserControl
     }
 
     /// <summary>
+    /// Gets or sets whether keyboard shortcuts are enabled.
+    /// Default is true.
+    /// </summary>
+    public bool EnableKeyboardShortcuts
+    {
+        get => GetValue(EnableKeyboardShortcutsProperty);
+        set => SetValue(EnableKeyboardShortcutsProperty, value);
+    }
+
+    /// <summary>
     /// Gets the full path of the currently loaded media file, if any.
     /// </summary>
     public string? CurrentMediaPath => _currentMediaPath;
@@ -238,6 +255,9 @@ public partial class VideoPlayerControl : UserControl
     {
         InitializeComponent();
 
+        // Enable focus so we can receive keyboard events
+        Focusable = true;
+
         _videoImage = this.FindControl<Image>("VideoImage");
         _seekBar = this.FindControl<Slider>("SeekBar");
         _volumeSlider = this.FindControl<Slider>("VolumeSlider");
@@ -280,6 +300,65 @@ public partial class VideoPlayerControl : UserControl
         
         // Handle property changes
         this.PropertyChanged += OnPropertyChanged;
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+
+        if (!EnableKeyboardShortcuts) return;
+
+        var modifiers = e.KeyModifiers;
+        bool isCtrl = modifiers.HasFlag(KeyModifiers.Control);
+
+        switch (e.Key)
+        {
+            case Key.Space:
+                TogglePlayPause();
+                e.Handled = true;
+                break;
+            
+            case Key.Left:
+                if (_mediaPlayer != null && _mediaPlayer.Length > 0)
+                {
+                    // Seek backward: 5s normal, 30s with Ctrl
+                    double currentPos = _mediaPlayer.Position * _mediaPlayer.Length; // ms
+                    double jump = isCtrl ? 30000 : 5000; // ms
+                    double newPos = Math.Max(0, currentPos - jump);
+                    float newPercent = (float)(newPos / _mediaPlayer.Length);
+                    Seek(newPercent);
+                }
+                e.Handled = true;
+                break;
+
+            case Key.Right:
+                if (_mediaPlayer != null && _mediaPlayer.Length > 0)
+                {
+                    // Seek forward: 5s normal, 30s with Ctrl
+                    double currentPos = _mediaPlayer.Position * _mediaPlayer.Length; // ms
+                    double jump = isCtrl ? 30000 : 5000; // ms
+                    double newPos = Math.Min(_mediaPlayer.Length, currentPos + jump);
+                    float newPercent = (float)(newPos / _mediaPlayer.Length);
+                    Seek(newPercent);
+                }
+                e.Handled = true;
+                break;
+
+            case Key.Up:
+                Volume = Math.Min(100, Volume + 5);
+                e.Handled = true;
+                break;
+
+            case Key.Down:
+                Volume = Math.Max(0, Volume - 5);
+                e.Handled = true;
+                break;
+
+            case Key.M:
+                ToggleMute();
+                e.Handled = true;
+                break;
+        }
     }
 
     private void OnPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)

@@ -253,24 +253,6 @@ public static class FFmpegInitializer
     #region Automatic Installation
 
     /// <summary>
-    /// Checks if Homebrew is installed on macOS.
-    /// </summary>
-    public static bool IsHomebrewInstalled()
-    {
-        if (!IsMacOS) return false;
-
-        try
-        {
-            // Check both Apple Silicon and Intel Homebrew paths
-            return File.Exists("/opt/homebrew/bin/brew") || File.Exists("/usr/local/bin/brew");
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    /// <summary>
     /// Gets the path to the Homebrew executable.
     /// </summary>
     private static string? GetHomebrewPath()
@@ -438,56 +420,6 @@ public static class FFmpegInitializer
         catch (Exception ex)
         {
             Log($"Exception during Homebrew installation: {ex.Message}");
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Attempts to install FFmpeg on Windows via winget.
-    /// </summary>
-    public static bool TryInstallFFmpegOnWindows()
-    {
-        if (!IsWindows) return false;
-
-        try
-        {
-            Log("Attempting to install FFmpeg via winget...");
-            StatusChanged?.Invoke("Installing FFmpeg via winget...");
-
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = "winget",
-                Arguments = "install --id Gyan.FFmpeg -e --silent --accept-package-agreements --accept-source-agreements",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            using var process = Process.Start(startInfo);
-            if (process == null)
-            {
-                Log("Failed to start winget process");
-                return false;
-            }
-
-            process.WaitForExit();
-
-            if (process.ExitCode == 0)
-            {
-                Log("FFmpeg installed successfully via winget");
-                StatusChanged?.Invoke("FFmpeg installed successfully!");
-                return true;
-            }
-            else
-            {
-                Log($"winget install failed with exit code {process.ExitCode}");
-                return false;
-            }
-        }
-        catch (Exception ex)
-        {
-            Log($"Exception during FFmpeg installation on Windows: {ex.Message}");
             return false;
         }
     }

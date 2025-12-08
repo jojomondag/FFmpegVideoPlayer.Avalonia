@@ -9,126 +9,57 @@ namespace FFmpegVideoPlayerExample;
 
 public partial class MainWindow : Window
 {
-    private CheckBox? _showControlsCheckBox;
-    private CheckBox? _transparentBgCheckBox;
-    private ComboBox? _stretchModeComboBox;
-
     public MainWindow()
     {
         InitializeComponent();
         
-        _showControlsCheckBox = this.FindControl<CheckBox>("ShowControlsCheckBox");
-        _transparentBgCheckBox = this.FindControl<CheckBox>("TransparentBgCheckBox");
-        _stretchModeComboBox = this.FindControl<ComboBox>("StretchModeComboBox");
-        
-        if (_showControlsCheckBox != null)
-        {
-            _showControlsCheckBox.IsCheckedChanged += OnShowControlsChanged;
-        }
-        
-        if (_transparentBgCheckBox != null)
-        {
-            _transparentBgCheckBox.IsCheckedChanged += OnTransparentBgChanged;
-        }
+        ShowControlsCheckBox.IsCheckedChanged += OnShowControlsChanged;
+        TransparentBgCheckBox.IsCheckedChanged += OnTransparentBgChanged;
+        StretchModeComboBox.SelectionChanged += OnStretchModeChanged;
 
-        if (_stretchModeComboBox != null)
-        {
-            _stretchModeComboBox.SelectionChanged += OnStretchModeChanged;
-        }
+        VideoPlayer.MediaOpened += (s, e) => Log.Information("Media opened: {MediaPath}", e.Path);
+        VideoPlayer.PlaybackStarted += (s, e) => LogPlaybackEvent("started");
+        VideoPlayer.PlaybackPaused += (s, e) => LogPlaybackEvent("paused");
+        VideoPlayer.PlaybackStopped += (s, e) => LogPlaybackEvent("stopped");
+        VideoPlayer.MediaEnded += (s, e) => LogPlaybackEvent("ended");
+    }
 
-        VideoPlayer.MediaOpened += OnMediaOpened;
-        VideoPlayer.PlaybackStarted += OnPlaybackStarted;
-        VideoPlayer.PlaybackPaused += OnPlaybackPaused;
-        VideoPlayer.PlaybackStopped += OnPlaybackStopped;
-        VideoPlayer.MediaEnded += OnMediaEnded;
+    private void LogPlaybackEvent(string eventName)
+    {
+        var path = VideoPlayer?.CurrentMediaPath;
+        if (path != null)
+            Log.Information("Playback {EventName}: {MediaPath}", eventName, path);
+        else
+            Log.Information("Playback {EventName}.", eventName);
     }
 
     private void OnShowControlsChanged(object? sender, RoutedEventArgs e)
     {
         if (VideoPlayer == null) return;
-        var showControls = _showControlsCheckBox?.IsChecked ?? true;
-        VideoPlayer.ShowControls = showControls;
+        VideoPlayer.ShowControls = ShowControlsCheckBox.IsChecked ?? true;
     }
 
     private void OnTransparentBgChanged(object? sender, RoutedEventArgs e)
     {
         if (VideoPlayer == null) return;
-        if (_transparentBgCheckBox?.IsChecked == true)
-        {
-            VideoPlayer.VideoBackground = Brushes.Transparent;
-        }
-        else
-        {
-            VideoPlayer.VideoBackground = Brushes.Black;
-        }
+        VideoPlayer.VideoBackground = TransparentBgCheckBox.IsChecked == true 
+            ? Brushes.Transparent 
+            : Brushes.Black;
     }
 
     private void OnStretchModeChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (VideoPlayer == null) return;
-        if (_stretchModeComboBox?.SelectedItem is ComboBoxItem item && item.Content is string stretchMode)
+        if (StretchModeComboBox.SelectedItem is ComboBoxItem { Content: string stretchMode } &&
+            Enum.TryParse<Stretch>(stretchMode, out var stretch))
         {
-            if (Enum.TryParse<Stretch>(stretchMode, out var stretch))
-            {
-                VideoPlayer.VideoStretch = stretch;
-            }
+            VideoPlayer.VideoStretch = stretch;
         }
     }
 
-    private void OnMediaOpened(object? sender, MediaOpenedEventArgs e)
+    private void OnShortcutsClick(object? sender, RoutedEventArgs e)
     {
-        Log.Information("Media opened: {MediaPath}", e.Path);
-    }
-
-    private void OnPlaybackStarted(object? sender, EventArgs e)
-    {
-        var path = VideoPlayer?.CurrentMediaPath;
-        if (path != null)
-        {
-            Log.Information("Playback started: {MediaPath}", path);
-        }
-        else
-        {
-            Log.Information("Playback started.");
-        }
-    }
-
-    private void OnPlaybackPaused(object? sender, EventArgs e)
-    {
-        var path = VideoPlayer?.CurrentMediaPath;
-        if (path != null)
-        {
-            Log.Information("Playback paused: {MediaPath}", path);
-        }
-        else
-        {
-            Log.Information("Playback paused.");
-        }
-    }
-
-    private void OnPlaybackStopped(object? sender, EventArgs e)
-    {
-        var path = VideoPlayer?.CurrentMediaPath;
-        if (path != null)
-        {
-            Log.Information("Playback stopped: {MediaPath}", path);
-        }
-        else
-        {
-            Log.Information("Playback stopped.");
-        }
-    }
-
-    private void OnMediaEnded(object? sender, EventArgs e)
-    {
-        var path = VideoPlayer?.CurrentMediaPath;
-        if (path != null)
-        {
-            Log.Information("Playback ended: {MediaPath}", path);
-        }
-        else
-        {
-            Log.Information("Playback ended.");
-        }
+        var window = new ShortcutsWindow();
+        window.Show(this);
     }
 }

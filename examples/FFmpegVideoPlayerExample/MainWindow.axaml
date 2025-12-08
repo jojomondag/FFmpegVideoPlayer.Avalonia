@@ -8,16 +8,33 @@
         Title="FFmpeg Video Player Example" 
         Width="900" Height="700"
         MinWidth="640" MinHeight="480">
+
+    <Window.Resources>
+        <DrawingBrush x:Key="CheckerboardBrush" TileMode="Tile" SourceRect="0,0,40,40" DestinationRect="0,0,40,40">
+            <DrawingBrush.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="#2a2a4e">
+                        <GeometryDrawing.Geometry>
+                            <RectangleGeometry Rect="0,0,40,40" />
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                    <GeometryDrawing Brush="#3a3a5e">
+                        <GeometryDrawing.Geometry>
+                            <GeometryGroup>
+                                <RectangleGeometry Rect="0,0,20,20" />
+                                <RectangleGeometry Rect="20,20,20,20" />
+                            </GeometryGroup>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                </DrawingGroup>
+            </DrawingBrush.Drawing>
+        </DrawingBrush>
+    </Window.Resources>
     
     <Grid RowDefinitions="Auto,*,Auto">
         <!-- Header -->
         <Border Grid.Row="0" Background="#2d2d2d" Padding="15">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="20">
-                <TextBlock Text="FFmpegVideoPlayer.Avalonia Example" 
-                           FontSize="18" 
-                           FontWeight="SemiBold"
-                           Foreground="White"
-                           VerticalAlignment="Center"/>
+            <StackPanel Orientation="Horizontal" Spacing="20" HorizontalAlignment="Center">
                 <CheckBox x:Name="ShowControlsCheckBox" 
                           Content="Show Controls" 
                           IsChecked="True" 
@@ -37,6 +54,10 @@
                     <ComboBoxItem>Uniform</ComboBoxItem>
                     <ComboBoxItem>UniformToFill</ComboBoxItem>
                 </ComboBox>
+                <Button x:Name="ShortcutsButton"
+                        Content="Shortcuts"
+                        Click="OnShortcutsClick"
+                        VerticalAlignment="Center"/>
             </StackPanel>
         </Border>
         
@@ -44,14 +65,7 @@
         <Border Grid.Row="1" Background="#1a1a2e" Margin="10" Padding="20" BorderBrush="#444466" BorderThickness="2" CornerRadius="8">
             <Grid>
                 <!-- Background grid pattern to show transparency/stretch effects -->
-                <Canvas Background="#2a2a4e" ClipToBounds="True">
-                    <Rectangle Width="20" Height="20" Fill="#3a3a5e" Canvas.Left="0" Canvas.Top="0"/>
-                    <Rectangle Width="20" Height="20" Fill="#3a3a5e" Canvas.Left="40" Canvas.Top="0"/>
-                    <Rectangle Width="20" Height="20" Fill="#3a3a5e" Canvas.Left="80" Canvas.Top="0"/>
-                    <Rectangle Width="20" Height="20" Fill="#3a3a5e" Canvas.Left="20" Canvas.Top="20"/>
-                    <Rectangle Width="20" Height="20" Fill="#3a3a5e" Canvas.Left="60" Canvas.Top="20"/>
-                    <Rectangle Width="20" Height="20" Fill="#3a3a5e" Canvas.Left="100" Canvas.Top="20"/>
-                </Canvas>
+                <Panel Background="{StaticResource CheckerboardBrush}" ClipToBounds="True" />
                 <ffmpeg:VideoPlayerControl x:Name="VideoPlayer" 
                                            ShowControls="True"
                                            VideoBackground="#80000000"/>

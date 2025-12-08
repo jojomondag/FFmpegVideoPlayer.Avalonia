@@ -625,8 +625,6 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
         }
     }
 
-    private static int _audioPacketCount = 0;
-    
     private void ProcessAudioPacket()
     {
         if (_audioPlayer == null)
@@ -641,19 +639,14 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
         }
 
         var tempFrame = ffmpeg.av_frame_alloc();
+        // Pre-allocate the output buffer pointer array outside the loop to avoid stack overflow (CA2014)
+        var outBuffer = stackalloc byte*[1];
         try
         {
             while (ffmpeg.avcodec_receive_frame(_audioCodecContext, tempFrame) >= 0)
             {
                 var samples = tempFrame->nb_samples;
                 var channels = _audioCodecContext->ch_layout.nb_channels;
-                
-                _audioPacketCount++;
-                if (_audioPacketCount <= 5 || _audioPacketCount % 100 == 0)
-                {
-                    var format = (AVSampleFormat)tempFrame->format;
-                    Debug.WriteLine($"[FFmpegMediaPlayer] Audio frame #{_audioPacketCount}: samples={samples}, channels={channels}, format={format}");
-                }
                 
                 // Use SwrContext for proper resampling
                 if (_swrContext != null)
@@ -667,7 +660,6 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
                     
                     fixed (short* outPtr = outData)
                     {
-                        var outBuffer = stackalloc byte*[1];
                         outBuffer[0] = (byte*)outPtr;
                         
                         // Resample
