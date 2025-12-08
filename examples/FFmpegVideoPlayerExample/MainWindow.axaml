@@ -28,14 +28,34 @@
                           IsChecked="False" 
                           Foreground="White"
                           VerticalAlignment="Center"/>
+                <ComboBox x:Name="StretchModeComboBox" 
+                          SelectedIndex="2"
+                          Width="120"
+                          VerticalAlignment="Center">
+                    <ComboBoxItem>None</ComboBoxItem>
+                    <ComboBoxItem>Fill</ComboBoxItem>
+                    <ComboBoxItem>Uniform</ComboBoxItem>
+                    <ComboBoxItem>UniformToFill</ComboBoxItem>
+                </ComboBox>
             </StackPanel>
         </Border>
         
         <!-- Video Player Control -->
-        <Border Grid.Row="1" Background="#1a1a2e" Margin="10">
-            <ffmpeg:VideoPlayerControl x:Name="VideoPlayer" 
-                                       ShowControls="True"
-                                       VideoBackground="Black"/>
+        <Border Grid.Row="1" Background="#1a1a2e" Margin="10" Padding="20" BorderBrush="#444466" BorderThickness="2" CornerRadius="8">
+            <Grid>
+                <!-- Background grid pattern to show transparency/stretch effects -->
+                <Canvas Background="#2a2a4e" ClipToBounds="True">
+                    <Rectangle Width="20" Height="20" Fill="#3a3a5e" Canvas.Left="0" Canvas.Top="0"/>
+                    <Rectangle Width="20" Height="20" Fill="#3a3a5e" Canvas.Left="40" Canvas.Top="0"/>
+                    <Rectangle Width="20" Height="20" Fill="#3a3a5e" Canvas.Left="80" Canvas.Top="0"/>
+                    <Rectangle Width="20" Height="20" Fill="#3a3a5e" Canvas.Left="20" Canvas.Top="20"/>
+                    <Rectangle Width="20" Height="20" Fill="#3a3a5e" Canvas.Left="60" Canvas.Top="20"/>
+                    <Rectangle Width="20" Height="20" Fill="#3a3a5e" Canvas.Left="100" Canvas.Top="20"/>
+                </Canvas>
+                <ffmpeg:VideoPlayerControl x:Name="VideoPlayer" 
+                                           ShowControls="True"
+                                           VideoBackground="#80000000"/>
+            </Grid>
         </Border>
     </Grid>
 </Window>

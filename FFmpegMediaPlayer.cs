@@ -1,4 +1,6 @@
 using System;
+using System.Buffers;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Avalonia.Threading;
@@ -44,6 +46,10 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
     
     // Audio playback
     private AudioPlayer? _audioPlayer;
+    private SwrContext* _swrContext;
+    private const int MaxPendingFrames = 4;
+    private int _pendingFrameCount;
+    private int _droppedFrames;
 
     /// <summary>
     /// Gets whether media is currently playing.
@@ -129,16 +135,21 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
         {
             CloseInternal();
 
+            _pendingFrameCount = 0;
+            _droppedFrames = 0;
+
             fixed (AVFormatContext** formatContext = &_formatContext)
             {
                 if (ffmpeg.avformat_open_input(formatContext, path, null, null) != 0)
                 {
+                    Debug.WriteLine($"[FFmpegMediaPlayer] Failed to open media: {path}");
                     return false;
                 }
             }
 
             if (ffmpeg.avformat_find_stream_info(_formatContext, null) < 0)
             {
+                Debug.WriteLine("[FFmpegMediaPlayer] Failed to read stream info.");
                 CloseInternal();
                 return false;
             }
@@ -159,6 +170,7 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
 
             if (_videoStreamIndex < 0 && _audioStreamIndex < 0)
             {
+                Debug.WriteLine("[FFmpegMediaPlayer] No playable streams found in media.");
                 CloseInternal();
                 return false;
             }
@@ -166,17 +178,20 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
             // Initialize video decoder
             if (_videoStreamIndex >= 0 && !InitializeVideoDecoder())
             {
+                Debug.WriteLine("[FFmpegMediaPlayer] Unable to initialize video decoder. Video stream disabled.");
                 _videoStreamIndex = -1;
             }
 
             // Initialize audio decoder
             if (_audioStreamIndex >= 0 && !InitializeAudioDecoder())
             {
+                Debug.WriteLine("[FFmpegMediaPlayer] Unable to initialize audio decoder. Audio stream disabled.");
                 _audioStreamIndex = -1;
             }
 
             if (_videoStreamIndex < 0 && _audioStreamIndex < 0)
             {
+                Debug.WriteLine("[FFmpegMediaPlayer] Media does not contain a supported audio or video stream.");
                 CloseInternal();
                 return false;
             }
@@ -190,6 +205,15 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
 
             // Allocate packet
             _packet = ffmpeg.av_packet_alloc();
+            if (_packet == null)
+            {
+                Debug.WriteLine("[FFmpegMediaPlayer] Failed to allocate packet.");
+                CloseInternal();
+                return false;
+            }
+
+            _pendingFrameCount = 0;
+            _droppedFrames = 0;
 
             return true;
         }
@@ -270,30 +294,65 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
         var codec = ffmpeg.avcodec_find_decoder(codecParams->codec_id);
         if (codec == null)
         {
+            Debug.WriteLine("[FFmpegMediaPlayer] Audio codec not found");
             return false;
         }
 
         _audioCodecContext = ffmpeg.avcodec_alloc_context3(codec);
         if (ffmpeg.avcodec_parameters_to_context(_audioCodecContext, codecParams) < 0)
         {
+            Debug.WriteLine("[FFmpegMediaPlayer] Failed to copy audio codec params");
             return false;
         }
 
         if (ffmpeg.avcodec_open2(_audioCodecContext, codec, null) < 0)
         {
+            Debug.WriteLine("[FFmpegMediaPlayer] Failed to open audio codec");
             return false;
         }
 
-        // Initialize audio player
+        // Initialize audio player and resampler
         try
         {
             var sampleRate = _audioCodecContext->sample_rate;
             var channels = _audioCodecContext->ch_layout.nb_channels;
-            _audioPlayer = new AudioPlayer(sampleRate, channels);
+            Debug.WriteLine($"[FFmpegMediaPlayer] Audio: sampleRate={sampleRate}, channels={channels}");
+            
+            // Initialize SwrContext for audio resampling to stereo S16
+            _swrContext = ffmpeg.swr_alloc();
+            
+            // Set input options
+            AVChannelLayout inChLayout = _audioCodecContext->ch_layout;
+            ffmpeg.av_opt_set_chlayout(_swrContext, "in_chlayout", &inChLayout, 0);
+            ffmpeg.av_opt_set_int(_swrContext, "in_sample_rate", sampleRate, 0);
+            ffmpeg.av_opt_set_sample_fmt(_swrContext, "in_sample_fmt", _audioCodecContext->sample_fmt, 0);
+            
+            // Set output options - stereo S16 for OpenAL
+            AVChannelLayout outChLayout;
+            ffmpeg.av_channel_layout_default(&outChLayout, 2); // Stereo
+            ffmpeg.av_opt_set_chlayout(_swrContext, "out_chlayout", &outChLayout, 0);
+            ffmpeg.av_opt_set_int(_swrContext, "out_sample_rate", sampleRate, 0);
+            ffmpeg.av_opt_set_sample_fmt(_swrContext, "out_sample_fmt", AVSampleFormat.AV_SAMPLE_FMT_S16, 0);
+            
+            if (ffmpeg.swr_init(_swrContext) < 0)
+            {
+                Debug.WriteLine("[FFmpegMediaPlayer] Failed to initialize SwrContext");
+                var ctx = _swrContext;
+                ffmpeg.swr_free(&ctx);
+                _swrContext = null;
+            }
+            else
+            {
+                Debug.WriteLine("[FFmpegMediaPlayer] SwrContext initialized successfully");
+            }
+            
+            _audioPlayer = new AudioPlayer(sampleRate, 2); // Always output stereo
             _audioPlayer.SetVolume(_volume / 100f);
+            Debug.WriteLine("[FFmpegMediaPlayer] AudioPlayer created successfully");
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"[FFmpegMediaPlayer] AudioPlayer creation failed: {ex.Message}");
             _audioPlayer = null;
         }
 
@@ -402,13 +461,16 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
     {
         var token = (CancellationToken)state!;
         var frameTime = 1000.0 / _frameRate;
-        var lastFrameTime = DateTime.UtcNow;
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var nextVideoTime = 0.0;
 
         while (!token.IsCancellationRequested)
         {
             if (_isPaused)
             {
                 Thread.Sleep(10);
+                stopwatch.Restart();
+                nextVideoTime = 0.0;
                 continue;
             }
 
@@ -432,24 +494,31 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
                 {
                     if (_packet->stream_index == _videoStreamIndex && _videoCodecContext != null)
                     {
+                        // Check if we're ahead of schedule - wait for the right time
+                        var currentTime = stopwatch.Elapsed.TotalMilliseconds;
+                        if (currentTime < nextVideoTime)
+                        {
+                            var waitTime = (int)(nextVideoTime - currentTime);
+                            if (waitTime > 1)
+                            {
+                                Thread.Sleep(waitTime);
+                            }
+                        }
+                        
                         ProcessVideoPacket();
+                        nextVideoTime += frameTime;
+                        
+                        // If we're falling behind, catch up by skipping timing
+                        currentTime = stopwatch.Elapsed.TotalMilliseconds;
+                        if (currentTime > nextVideoTime + frameTime * 2)
+                        {
+                            nextVideoTime = currentTime; // Reset timing to catch up
+                        }
                     }
                     else if (_packet->stream_index == _audioStreamIndex && _audioCodecContext != null)
                     {
                         ProcessAudioPacket();
                     }
-                }
-
-                // Frame timing for video
-                if (_packet->stream_index == _videoStreamIndex)
-                {
-                    var elapsed = (DateTime.UtcNow - lastFrameTime).TotalMilliseconds;
-                    var delay = frameTime - elapsed;
-                    if (delay > 0)
-                    {
-                        Thread.Sleep((int)delay);
-                    }
-                    lastFrameTime = DateTime.UtcNow;
                 }
             }
             finally
@@ -491,41 +560,137 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
                 });
             }
 
-            // Notify frame ready
-            var frameData = new byte[_rgbBufferSize];
-            Marshal.Copy((IntPtr)_rgbFrame->data[0], frameData, 0, _rgbBufferSize);
+            // Notify frame ready with pooled buffer and bounded queue to prevent UI overload
+            var pendingFrames = Interlocked.Increment(ref _pendingFrameCount);
+            if (pendingFrames > MaxPendingFrames)
+            {
+                Interlocked.Decrement(ref _pendingFrameCount);
+                var drops = Interlocked.Increment(ref _droppedFrames);
+                if (drops <= 5 || drops % 60 == 0)
+                {
+                    Debug.WriteLine("[FFmpegMediaPlayer] Dropping video frame to keep UI responsive.");
+                }
+                continue;
+            }
+
             var stride = _rgbFrame->linesize[0];
             var width = _videoWidth;
             var height = _videoHeight;
-            
+            var bufferSize = _rgbBufferSize;
+
+            byte[] frameBuffer;
+            try
+            {
+                frameBuffer = ArrayPool<byte>.Shared.Rent(bufferSize);
+            }
+            catch (Exception ex)
+            {
+                Interlocked.Decrement(ref _pendingFrameCount);
+                Debug.WriteLine($"[FFmpegMediaPlayer] Unable to rent frame buffer of {bufferSize} bytes: {ex.Message}");
+                break;
+            }
+
+            try
+            {
+                Marshal.Copy((IntPtr)_rgbFrame->data[0], frameBuffer, 0, bufferSize);
+            }
+            catch (Exception ex)
+            {
+                ArrayPool<byte>.Shared.Return(frameBuffer);
+                Interlocked.Decrement(ref _pendingFrameCount);
+                Debug.WriteLine($"[FFmpegMediaPlayer] Failed to copy frame data: {ex.Message}");
+                break;
+            }
+
+            var eventArgs = new FrameEventArgs(
+                frameBuffer,
+                width,
+                height,
+                stride,
+                bufferSize,
+                pooled: true,
+                releaseAction: buffer => ArrayPool<byte>.Shared.Return(buffer));
+
             Dispatcher.UIThread.Post(() =>
             {
-                FrameReady?.Invoke(this, new FrameEventArgs(frameData, width, height, stride));
+                try
+                {
+                    FrameReady?.Invoke(this, eventArgs);
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref _pendingFrameCount);
+                }
             });
         }
     }
 
+    private static int _audioPacketCount = 0;
+    
     private void ProcessAudioPacket()
     {
-        if (_audioPlayer == null) return;
-        if (ffmpeg.avcodec_send_packet(_audioCodecContext, _packet) < 0) return;
+        if (_audioPlayer == null)
+        {
+            Debug.WriteLine("[FFmpegMediaPlayer] ProcessAudioPacket: _audioPlayer is null!");
+            return;
+        }
+        if (ffmpeg.avcodec_send_packet(_audioCodecContext, _packet) < 0)
+        {
+            Debug.WriteLine("[FFmpegMediaPlayer] ProcessAudioPacket: avcodec_send_packet failed");
+            return;
+        }
 
         var tempFrame = ffmpeg.av_frame_alloc();
         try
         {
             while (ffmpeg.avcodec_receive_frame(_audioCodecContext, tempFrame) >= 0)
             {
-                // Convert audio to float format for playback
                 var samples = tempFrame->nb_samples;
                 var channels = _audioCodecContext->ch_layout.nb_channels;
                 
-                var floatBuffer = new float[samples * channels];
+                _audioPacketCount++;
+                if (_audioPacketCount <= 5 || _audioPacketCount % 100 == 0)
+                {
+                    var format = (AVSampleFormat)tempFrame->format;
+                    Debug.WriteLine($"[FFmpegMediaPlayer] Audio frame #{_audioPacketCount}: samples={samples}, channels={channels}, format={format}");
+                }
                 
-                // Simple conversion - handle common formats
-                var format = (AVSampleFormat)tempFrame->format;
-                ConvertAudioSamples(tempFrame, floatBuffer, samples, channels, format);
-                
-                _audioPlayer.QueueSamples(floatBuffer);
+                // Use SwrContext for proper resampling
+                if (_swrContext != null)
+                {
+                    // Calculate output samples
+                    var outSamples = (int)ffmpeg.swr_get_delay(_swrContext, _audioCodecContext->sample_rate) + samples;
+                    
+                    // Allocate output buffer (stereo S16 = 2 channels * 2 bytes per sample)
+                    var outBufferSize = outSamples * 2; // stereo sample count
+                    var outData = new short[outBufferSize];
+                    
+                    fixed (short* outPtr = outData)
+                    {
+                        var outBuffer = stackalloc byte*[1];
+                        outBuffer[0] = (byte*)outPtr;
+                        
+                        // Resample
+                        var convertedSamples = ffmpeg.swr_convert(
+                            _swrContext,
+                            outBuffer, outSamples,
+                            tempFrame->extended_data, samples);
+                        
+                        if (convertedSamples > 0)
+                        {
+                            // Queue the S16 samples directly
+                            _audioPlayer.QueueSamplesS16(outPtr, convertedSamples * 2); // stereo
+                        }
+                    }
+                }
+                else
+                {
+                    // Fallback to manual conversion
+                    var floatBuffer = new float[samples * 2]; // Output stereo
+                    var format2 = (AVSampleFormat)tempFrame->format;
+                    ConvertAudioSamples(tempFrame, floatBuffer, samples, channels, format2);
+                    _audioPlayer.QueueSamples(floatBuffer);
+                }
             }
         }
         finally
@@ -589,6 +754,13 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
             _swsContext = null;
         }
 
+        if (_swrContext != null)
+        {
+            var ctx = _swrContext;
+            ffmpeg.swr_free(&ctx);
+            _swrContext = null;
+        }
+
         if (_rgbBuffer != null)
         {
             ffmpeg.av_free(_rgbBuffer);
@@ -644,6 +816,8 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
         _audioStreamIndex = -1;
         _position = 0;
         _duration = 0;
+        _pendingFrameCount = 0;
+        _droppedFrames = 0;
     }
 
     /// <summary>
@@ -691,18 +865,41 @@ public class LengthChangedEventArgs : EventArgs
 /// <summary>
 /// Event arguments for frame ready events.
 /// </summary>
-public class FrameEventArgs : EventArgs
+public sealed class FrameEventArgs : EventArgs, IDisposable
 {
     public byte[] Data { get; }
     public int Width { get; }
     public int Height { get; }
     public int Stride { get; }
+    public int DataLength { get; }
+    private readonly Action<byte[]>? _releaseAction;
+    private bool _disposed;
     
     public FrameEventArgs(byte[] data, int width, int height, int stride)
+        : this(data, width, height, stride, data?.Length ?? 0, pooled: false, releaseAction: null)
+    {
+    }
+
+    internal FrameEventArgs(byte[] data, int width, int height, int stride, int dataLength, bool pooled, Action<byte[]>? releaseAction)
     {
         Data = data;
         Width = width;
         Height = height;
         Stride = stride;
+        DataLength = dataLength;
+        _releaseAction = pooled ? releaseAction : null;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _releaseAction?.Invoke(Data);
+        _disposed = true;
+        GC.SuppressFinalize(this);
+    }
+
+    ~FrameEventArgs()
+    {
+        Dispose();
     }
 }

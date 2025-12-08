@@ -36,6 +36,8 @@ public partial class VideoPlayerControl : UserControl
     private Border? _videoBorder;
     private Button? _openButton;
     private WriteableBitmap? _frameBitmap;
+    private string? _currentMediaPath;
+    private bool _hasMediaLoaded;
 
     /// <summary>
     /// Defines the Volume property.
@@ -78,6 +80,12 @@ public partial class VideoPlayerControl : UserControl
     /// </summary>
     public static readonly StyledProperty<Media.IBrush?> VideoBackgroundProperty =
         AvaloniaProperty.Register<VideoPlayerControl, Media.IBrush?>(nameof(VideoBackground), Media.Brushes.Black);
+
+    /// <summary>
+    /// Defines the VideoStretch property.
+    /// </summary>
+    public static readonly StyledProperty<Media.Stretch> VideoStretchProperty =
+        AvaloniaProperty.Register<VideoPlayerControl, Media.Stretch>(nameof(VideoStretch), Media.Stretch.Uniform);
 
     /// <summary>
     /// Gets or sets the volume (0-100).
@@ -164,6 +172,26 @@ public partial class VideoPlayerControl : UserControl
     }
 
     /// <summary>
+    /// Gets or sets the stretch mode for the video.
+    /// Default is Uniform. Options: None, Fill, Uniform, UniformToFill.
+    /// </summary>
+    public Media.Stretch VideoStretch
+    {
+        get => GetValue(VideoStretchProperty);
+        set => SetValue(VideoStretchProperty, value);
+    }
+
+    /// <summary>
+    /// Gets the full path of the currently loaded media file, if any.
+    /// </summary>
+    public string? CurrentMediaPath => _currentMediaPath;
+
+    /// <summary>
+    /// Gets whether the control currently has a media resource loaded.
+    /// </summary>
+    public bool HasMediaLoaded => _hasMediaLoaded;
+
+    /// <summary>
     /// Gets whether a video is currently playing.
     /// </summary>
     public bool IsPlaying => _mediaPlayer?.IsPlaying ?? false;
@@ -182,6 +210,11 @@ public partial class VideoPlayerControl : UserControl
     /// Occurs when playback starts.
     /// </summary>
     public event EventHandler? PlaybackStarted;
+
+    /// <summary>
+    /// Occurs when media is successfully opened.
+    /// </summary>
+    public event EventHandler<MediaOpenedEventArgs>? MediaOpened;
 
     /// <summary>
     /// Occurs when playback is paused.
@@ -284,6 +317,13 @@ public partial class VideoPlayerControl : UserControl
                 _videoBorder.Background = brush;
             }
         }
+        else if (e.Property == VideoStretchProperty)
+        {
+            if (_videoImage != null && e.NewValue is Media.Stretch stretch)
+            {
+                _videoImage.Stretch = stretch;
+            }
+        }
         else if (e.Property == ShowControlsProperty)
         {
             if (_controlPanelBorder != null)
@@ -345,6 +385,10 @@ public partial class VideoPlayerControl : UserControl
             {
                 _videoBorder.Background = VideoBackground;
             }
+            if (_videoImage != null)
+            {
+                _videoImage.Stretch = VideoStretch;
+            }
             
             // Load source if set
             if (!string.IsNullOrEmpty(Source))
@@ -382,15 +426,21 @@ public partial class VideoPlayerControl : UserControl
             // Copy frame data to bitmap
             using (var fb = _frameBitmap.Lock())
             {
-                var sourceSpan = e.Data.AsSpan();
                 var destPtr = fb.Address;
                 
                 for (int y = 0; y < e.Height; y++)
                 {
                     var sourceOffset = y * e.Stride;
                     var destOffset = y * fb.RowBytes;
-                    var rowLength = Math.Min(e.Width * 4, Math.Min(e.Stride, fb.RowBytes));
-                    
+                    var maxRowLength = Math.Min(e.Stride, fb.RowBytes);
+                    var requestedLength = Math.Min(e.Width * 4, maxRowLength);
+                    var available = Math.Max(0, e.DataLength - sourceOffset);
+                    var rowLength = Math.Min(requestedLength, available);
+                    if (rowLength <= 0)
+                    {
+                        break;
+                    }
+
                     Marshal.Copy(e.Data, sourceOffset, destPtr + destOffset, rowLength);
                 }
             }
@@ -405,6 +455,10 @@ public partial class VideoPlayerControl : UserControl
         {
             Debug.WriteLine($"[VideoPlayerControl] Frame render error: {ex.Message}");
         }
+        finally
+        {
+            e.Dispose();
+        }
     }
 
     /// <summary>
@@ -413,13 +467,30 @@ public partial class VideoPlayerControl : UserControl
     /// <param name="path">The path to the media file.</param>
     public void Open(string path)
     {
+        Debug.WriteLine($"[VideoPlayerControl] Open called with path: {path}");
+        
         if (_mediaPlayer == null)
         {
-            Debug.WriteLine("[VideoPlayerControl] FFmpeg not initialized");
+            Debug.WriteLine("[VideoPlayerControl] FFmpeg not initialized - _mediaPlayer is null");
             return;
         }
 
-        _mediaPlayer.Open(path);
+        _hasMediaLoaded = false;
+        Debug.WriteLine("[VideoPlayerControl] Calling _mediaPlayer.Open...");
+
+        var opened = _mediaPlayer.Open(path);
+        Debug.WriteLine($"[VideoPlayerControl] _mediaPlayer.Open returned: {opened}");
+        
+        if (!opened)
+        {
+            Debug.WriteLine($"[VideoPlayerControl] Failed to open media: {path}");
+            return;
+        }
+
+        _currentMediaPath = path;
+        _hasMediaLoaded = true;
+        Debug.WriteLine($"[VideoPlayerControl] Media loaded successfully, raising MediaOpened event");
+        MediaOpened?.Invoke(this, new MediaOpenedEventArgs(path));
 
         if (AutoPlay)
         {
@@ -600,27 +671,40 @@ public partial class VideoPlayerControl : UserControl
 
     private async void OnOpenClick(object? sender, RoutedEventArgs e)
     {
-        var topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel == null) return;
-
-        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        try
         {
-            Title = "Open Video File",
-            AllowMultiple = false,
-            FileTypeFilter = new List<FilePickerFileType>
+            var topLevel = TopLevel.GetTopLevel(this);
+            if (topLevel == null) return;
+
+            var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
-                new("Video Files") { Patterns = new[] { "*.mp4", "*.mkv", "*.avi", "*.mov", "*.wmv", "*.flv", "*.webm", "*.m4v", "*.ts" } },
-                new("Audio Files") { Patterns = new[] { "*.mp3", "*.wav", "*.flac", "*.aac", "*.ogg", "*.m4a" } },
-                new("All Files") { Patterns = new[] { "*" } }
-            }
-        });
+                Title = "Open Video File",
+                AllowMultiple = false,
+                FileTypeFilter = new List<FilePickerFileType>
+                {
+                    new("Video Files") { Patterns = new[] { "*.mp4", "*.mkv", "*.avi", "*.mov", "*.wmv", "*.flv", "*.webm", "*.m4v", "*.ts" } },
+                    new("Audio Files") { Patterns = new[] { "*.mp3", "*.wav", "*.flac", "*.aac", "*.ogg", "*.m4a" } },
+                    new("All Files") { Patterns = new[] { "*" } }
+                }
+            });
 
-        if (files.Count > 0 && _mediaPlayer != null)
+            if (files.Count > 0)
+            {
+                var file = files[0];
+                var path = file.Path.LocalPath;
+                Debug.WriteLine($"[VideoPlayerControl] File selected from picker: {path}");
+                Open(path);
+                Debug.WriteLine($"[VideoPlayerControl] After Open: _hasMediaLoaded={_hasMediaLoaded}, IsPlaying={_mediaPlayer?.IsPlaying}");
+                if (_hasMediaLoaded && _mediaPlayer != null && !_mediaPlayer.IsPlaying)
+                {
+                    Debug.WriteLine("[VideoPlayerControl] Calling Play after successful open");
+                    _mediaPlayer.Play();
+                }
+            }
+        }
+        catch (Exception ex)
         {
-            var file = files[0];
-            var path = file.Path.LocalPath;
-            _mediaPlayer.Open(path);
-            _mediaPlayer.Play();
+            Debug.WriteLine($"[VideoPlayerControl] Error opening file: {ex}");
         }
     }
 
@@ -693,5 +777,23 @@ public partial class VideoPlayerControl : UserControl
         }
         _frameBitmap = null;
         _isInitialized = false;
+        _currentMediaPath = null;
+        _hasMediaLoaded = false;
     }
+}
+
+/// <summary>
+/// Provides data for the MediaOpened event.
+/// </summary>
+public sealed class MediaOpenedEventArgs : EventArgs
+{
+    public MediaOpenedEventArgs(string path)
+    {
+        Path = path;
+    }
+
+    /// <summary>
+    /// Gets the full path of the media that was opened.
+    /// </summary>
+    public string Path { get; }
 }

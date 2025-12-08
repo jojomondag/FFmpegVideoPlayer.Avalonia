@@ -14,10 +14,30 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.6" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.6" />
     <PackageReference Include="Material.Icons.Avalonia" Version="2.4.1" />
+    <PackageReference Include="Serilog" Version="3.1.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="5.0.0" />
+    <!-- OpenAL native library for audio playback -->
+    <PackageReference Include="OpenAL.Soft" Version="1.19.1" />
   </ItemGroup>
 
   <!-- Reference the main library project for development/testing -->
   <ItemGroup>
     <ProjectReference Include="../../Avalonia.FFmpegVideoPlayer.csproj" />
   </ItemGroup>
+
+  <!-- Copy FFmpeg native libraries from the main project's runtimes folder -->
+  <Target Name="CopyFFmpegNativeLibraries" AfterTargets="Build">
+    <PropertyGroup>
+      <FFmpegRuntimesSource>$(MSBuildThisFileDirectory)..\..\runtimes\</FFmpegRuntimesSource>
+    </PropertyGroup>
+    <ItemGroup>
+      <FFmpegNativeFiles Include="$(FFmpegRuntimesSource)**\*.*" Exclude="$(FFmpegRuntimesSource)README.md" />
+    </ItemGroup>
+    <Copy SourceFiles="@(FFmpegNativeFiles)"
+          DestinationFiles="@(FFmpegNativeFiles->'$(OutDir)runtimes\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(FFmpegNativeFiles)' != ''" />
+    <Message Text="Copied FFmpeg native libraries to $(OutDir)runtimes\" Importance="high" />
+  </Target>
 </Project>

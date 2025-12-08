@@ -1,0 +1,58 @@
+2025-12-08 01:06:43.422 +01:00 [INF] Launching FFmpeg Video Player example.
+2025-12-08 01:06:43.484 +01:00 [DBG] [FFmpegInitializer] Initializing FFmpeg for windows-x64
+2025-12-08 01:06:43.484 +01:00 [INF] Initializing FFmpeg for windows-x64...
+2025-12-08 01:06:43.504 +01:00 [DBG] [FFmpegInitializer] Using FFmpeg from: C:\Users\Josef\Documents\Github\FFmpegVideoPlayer.Avalonia\examples\FFmpegVideoPlayerExample\bin\Debug\net8.0\runtimes\win-x64\native
+2025-12-08 01:06:43.510 +01:00 [DBG] [FFmpegInitializer] FFmpeg libavcodec version: 62.11.100
+2025-12-08 01:06:43.510 +01:00 [INF] FFmpeg initialized successfully (libavcodec: 62.11.100)
+2025-12-08 01:06:59.922 +01:00 [DBG] [VideoPlayerControl] File selected from picker: C:\Users\Josef\Downloads\It.2017.1080p.BRRip.6CH.MkvCage.mkv
+2025-12-08 01:06:59.922 +01:00 [DBG] [VideoPlayerControl] Open called with path: C:\Users\Josef\Downloads\It.2017.1080p.BRRip.6CH.MkvCage.mkv
+2025-12-08 01:06:59.922 +01:00 [DBG] [VideoPlayerControl] Calling _mediaPlayer.Open...
+2025-12-08 01:06:59.939 +01:00 [DBG] [FFmpegMediaPlayer] Audio: sampleRate=48000, channels=6
+2025-12-08 01:06:59.941 +01:00 [DBG] [FFmpegMediaPlayer] SwrContext initialized successfully
+2025-12-08 01:06:59.941 +01:00 [DBG] [AudioPlayer] Initializing: sampleRate=48000, inputChannels=2, outputChannels=2
+2025-12-08 01:06:59.945 +01:00 [DBG] [AudioPlayer] Audio device opened successfully
+2025-12-08 01:06:59.956 +01:00 [DBG] [AudioPlayer] Audio thread started
+2025-12-08 01:06:59.957 +01:00 [DBG] [FFmpegMediaPlayer] AudioPlayer created successfully
+2025-12-08 01:06:59.957 +01:00 [DBG] [VideoPlayerControl] _mediaPlayer.Open returned: True
+2025-12-08 01:06:59.957 +01:00 [DBG] [VideoPlayerControl] Media loaded successfully, raising MediaOpened event
+2025-12-08 01:06:59.957 +01:00 [INF] Media opened: C:\Users\Josef\Downloads\It.2017.1080p.BRRip.6CH.MkvCage.mkv
+2025-12-08 01:06:59.959 +01:00 [DBG] [VideoPlayerControl] After Open: _hasMediaLoaded=True, IsPlaying=False
+2025-12-08 01:06:59.959 +01:00 [DBG] [VideoPlayerControl] Calling Play after successful open
+2025-12-08 01:06:59.959 +01:00 [INF] Playback started: C:\Users\Josef\Downloads\It.2017.1080p.BRRip.6CH.MkvCage.mkv
+2025-12-08 01:06:59.962 +01:00 [DBG] [FFmpegMediaPlayer] Audio frame #1: samples=2048, channels=6, format=AV_SAMPLE_FMT_FLTP
+2025-12-08 01:06:59.963 +01:00 [DBG] [FFmpegMediaPlayer] Audio frame #2: samples=2048, channels=6, format=AV_SAMPLE_FMT_FLTP
+2025-12-08 01:06:59.963 +01:00 [DBG] [FFmpegMediaPlayer] Audio frame #3: samples=2048, channels=6, format=AV_SAMPLE_FMT_FLTP
+2025-12-08 01:06:59.963 +01:00 [DBG] [FFmpegMediaPlayer] Audio frame #4: samples=2048, channels=6, format=AV_SAMPLE_FMT_FLTP
+2025-12-08 01:06:59.964 +01:00 [DBG] [FFmpegMediaPlayer] Audio frame #5: samples=2048, channels=6, format=AV_SAMPLE_FMT_FLTP
+2025-12-08 01:06:59.979 +01:00 [DBG] [AudioPlayer] Queued S16 buffer #1: 4096 samples
+2025-12-08 01:06:59.979 +01:00 [DBG] [AudioPlayer] Queued S16 buffer #2: 4096 samples
+2025-12-08 01:06:59.979 +01:00 [DBG] [AudioPlayer] Queued S16 buffer #3: 4096 samples
+2025-12-08 01:06:59.979 +01:00 [DBG] [AudioPlayer] Queued S16 buffer #4: 4096 samples
+2025-12-08 01:06:59.979 +01:00 [DBG] [AudioPlayer] Queued S16 buffer #5: 4096 samples
+2025-12-08 01:06:59.979 +01:00 [DBG] [AudioPlayer] Initial playback start with 8 queued buffers
+2025-12-08 01:07:03.937 +01:00 [DBG] [FFmpegMediaPlayer] Audio frame #100: samples=2048, channels=6, format=AV_SAMPLE_FMT_FLTP
+2025-12-08 01:07:03.951 +01:00 [DBG] [AudioPlayer] Queued S16 buffer #100: 4096 samples
+2025-12-08 01:07:08.190 +01:00 [DBG] [FFmpegMediaPlayer] Audio frame #200: samples=2048, channels=6, format=AV_SAMPLE_FMT_FLTP
+2025-12-08 01:07:08.205 +01:00 [DBG] [AudioPlayer] Queued S16 buffer #200: 4096 samples
+2025-12-08 01:07:12.231 +01:00 [DBG] [FFmpegMediaPlayer] Audio frame #300: samples=2048, channels=6, format=AV_SAMPLE_FMT_FLTP
+2025-12-08 01:07:12.245 +01:00 [DBG] [AudioPlayer] Queued S16 buffer #300: 4096 samples
+2025-12-08 01:07:14.222 +01:00 [DBG] [VideoPlayerControl] File selected from picker: C:\Users\Josef\Downloads\Pilot Gemini _ Fördjupningsutbildning - 2025_05_20 14_51 CEST – Recording.mp4
+2025-12-08 01:07:14.222 +01:00 [DBG] [VideoPlayerControl] Open called with path: C:\Users\Josef\Downloads\Pilot Gemini _ Fördjupningsutbildning - 2025_05_20 14_51 CEST – Recording.mp4
+2025-12-08 01:07:14.222 +01:00 [DBG] [VideoPlayerControl] Calling _mediaPlayer.Open...
+2025-12-08 01:07:14.404 +01:00 [DBG] [FFmpegMediaPlayer] Audio: sampleRate=48000, channels=2
+2025-12-08 01:07:14.404 +01:00 [DBG] [FFmpegMediaPlayer] SwrContext initialized successfully
+2025-12-08 01:07:14.404 +01:00 [DBG] [AudioPlayer] Initializing: sampleRate=48000, inputChannels=2, outputChannels=2
+2025-12-08 01:07:14.405 +01:00 [DBG] [AudioPlayer] Audio device opened successfully
+2025-12-08 01:07:14.414 +01:00 [DBG] [AudioPlayer] Audio thread started
+2025-12-08 01:07:14.414 +01:00 [DBG] [FFmpegMediaPlayer] AudioPlayer created successfully
+2025-12-08 01:07:14.415 +01:00 [DBG] [VideoPlayerControl] _mediaPlayer.Open returned: True
+2025-12-08 01:07:14.415 +01:00 [DBG] [VideoPlayerControl] Media loaded successfully, raising MediaOpened event
+2025-12-08 01:07:14.415 +01:00 [INF] Media opened: C:\Users\Josef\Downloads\Pilot Gemini _ Fördjupningsutbildning - 2025_05_20 14_51 CEST – Recording.mp4
+2025-12-08 01:07:14.415 +01:00 [DBG] [VideoPlayerControl] After Open: _hasMediaLoaded=True, IsPlaying=True
+2025-12-08 01:07:14.461 +01:00 [DBG] [AudioPlayer] Initial playback start with 5 queued buffers
+2025-12-08 01:07:15.366 +01:00 [DBG] [FFmpegMediaPlayer] Audio frame #400: samples=1024, channels=2, format=AV_SAMPLE_FMT_FLTP
+2025-12-08 01:07:15.457 +01:00 [DBG] [AudioPlayer] Queued S16 buffer #400: 2048 samples
+2025-12-08 01:07:17.488 +01:00 [DBG] [FFmpegMediaPlayer] Audio frame #500: samples=1024, channels=2, format=AV_SAMPLE_FMT_FLTP
+2025-12-08 01:07:17.580 +01:00 [DBG] [AudioPlayer] Queued S16 buffer #500: 2048 samples
+2025-12-08 01:07:19.617 +01:00 [DBG] [FFmpegMediaPlayer] Audio frame #600: samples=1024, channels=2, format=AV_SAMPLE_FMT_FLTP
+2025-12-08 01:07:19.711 +01:00 [DBG] [AudioPlayer] Queued S16 buffer #600: 2048 samples
