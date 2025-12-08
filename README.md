@@ -47,32 +47,111 @@ cd FFmpegVideoPlayer.Avalonia/examples/FFmpegVideoPlayerExample
 dotnet run
 ```
 
-## Properties
+## VideoPlayerControl API
+
+### Properties
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `Source` | `string` | `null` | Video file path |
-| `AutoPlay` | `bool` | `False` | Auto-play on load |
-| `Volume` | `int` | `100` | Volume (0-100) |
-| `ShowControls` | `bool` | `True` | Show control bar |
-| `ShowOpenButton` | `bool` | `True` | Show file picker button |
-| `ControlPanelBackground` | `IBrush` | `White` | Control bar background |
-| `VideoBackground` | `IBrush` | `Black` | Video area background (set to `Transparent` for overlays) |
+| `Source` | `string?` | `null` | Video file path or URL |
+| `AutoPlay` | `bool` | `false` | Auto-play when media is loaded |
+| `Volume` | `int` | `100` | Volume level (0-100) |
+| `ShowControls` | `bool` | `true` | Show/hide control bar |
+| `ShowOpenButton` | `bool` | `true` | Show/hide file picker button |
+| `ControlPanelBackground` | `IBrush?` | `White` | Control bar background brush |
+| `VideoBackground` | `IBrush?` | `Black` | Video area background (set to `Transparent` for overlays) |
+| `VideoStretch` | `Stretch` | `Uniform` | Video stretch mode (`None`, `Fill`, `Uniform`, `UniformToFill`) |
+| `EnableKeyboardShortcuts` | `bool` | `true` | Enable keyboard controls (Space, Arrow keys, M) |
+| `CurrentMediaPath` | `string?` | `null` | Full path of currently loaded media (read-only) |
+| `HasMediaLoaded` | `bool` | `false` | Whether media is currently loaded (read-only) |
+| `IsPlaying` | `bool` | `false` | Whether playback is active (read-only) |
+| `Position` | `long` | `0` | Current playback position in milliseconds (read-only) |
+| `Duration` | `long` | `0` | Total media duration in milliseconds (read-only) |
 
-## Methods
+### Methods
 
-| Method | Description |
-|--------|-------------|
-| `Open(path)` | Open video file |
-| `Play()` | Start playback |
-| `Pause()` | Pause playback |
-| `Stop()` | Stop and reset |
-| `Seek(float)` | Seek (0.0-1.0) |
-| `ToggleMute()` | Toggle mute |
+| Method | Parameters | Description |
+|--------|------------|-------------|
+| `Open(string path)` | `path`: File path or URL | Opens and loads a media file |
+| `OpenUri(Uri uri)` | `uri`: Media URI | Opens media from a URI |
+| `Play()` | - | Starts or resumes playback |
+| `Pause()` | - | Pauses playback |
+| `Stop()` | - | Stops playback and resets position |
+| `TogglePlayPause()` | - | Toggles between play and pause |
+| `Seek(float positionPercent)` | `positionPercent`: 0.0 to 1.0 | Seeks to specific position |
+| `ToggleMute()` | - | Toggles mute state |
 
-## Events
+### Events
 
-`PlaybackStarted` · `PlaybackPaused` · `PlaybackStopped` · `MediaEnded`
+| Event | EventArgs | Description |
+|-------|-----------|-------------|
+| `PlaybackStarted` | `EventArgs` | Raised when playback starts |
+| `PlaybackPaused` | `EventArgs` | Raised when playback is paused |
+| `PlaybackStopped` | `EventArgs` | Raised when playback is stopped |
+| `MediaOpened` | `MediaOpenedEventArgs` | Raised when media is successfully opened |
+| `MediaEnded` | `EventArgs` | Raised when media reaches the end |
+
+### Keyboard Shortcuts
+
+When `EnableKeyboardShortcuts` is `true`:
+
+| Key | Action |
+|-----|--------|
+| `Space` | Toggle play/pause |
+| `Left Arrow` | Seek backward 5 seconds (30s with Ctrl) |
+| `Right Arrow` | Seek forward 5 seconds (30s with Ctrl) |
+| `Up Arrow` | Increase volume by 5 |
+| `Down Arrow` | Decrease volume by 5 |
+| `M` | Toggle mute |
+
+## FFmpegMediaPlayer API
+
+For advanced scenarios requiring custom UI or direct frame access:
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `IsPlaying` | `bool` | Whether media is currently playing (read-only) |
+| `Position` | `float` | Current position as percentage (0.0 to 1.0, read-only) |
+| `Length` | `long` | Total duration in milliseconds (read-only) |
+| `Volume` | `int` | Volume level (0-100) |
+| `VideoWidth` | `int` | Video frame width (read-only) |
+| `VideoHeight` | `int` | Video frame height (read-only) |
+
+### Methods
+
+| Method | Parameters | Returns | Description |
+|--------|------------|---------|-------------|
+| `Open(string path)` | `path`: File path or URL | `bool` | Opens media file, returns true if successful |
+| `Play()` | - | - | Starts or resumes playback |
+| `Pause()` | - | - | Pauses playback |
+| `Stop()` | - | - | Stops playback and resets to beginning |
+| `Seek(float positionPercent)` | `positionPercent`: 0.0 to 1.0 | - | Seeks to specific position |
+| `Close()` | - | - | Closes current media and releases resources |
+| `Dispose()` | - | - | Disposes the player and all resources |
+
+### Events
+
+| Event | EventArgs | Description |
+|-------|-----------|-------------|
+| `Playing` | `EventArgs` | Raised when playback starts |
+| `Paused` | `EventArgs` | Raised when playback is paused |
+| `Stopped` | `EventArgs` | Raised when playback is stopped |
+| `EndReached` | `EventArgs` | Raised when media reaches the end |
+| `PositionChanged` | `PositionChangedEventArgs` | Raised during playback with position updates |
+| `LengthChanged` | `LengthChangedEventArgs` | Raised when media duration becomes known |
+| `FrameReady` | `FrameEventArgs` | Raised when a new video frame is available |
+
+### FrameEventArgs Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Data` | `byte[]` | BGRA pixel data |
+| `Width` | `int` | Frame width in pixels |
+| `Height` | `int` | Frame height in pixels |
+| `Stride` | `int` | Bytes per row |
+| `DataLength` | `int` | Total data length in bytes |
 
 ## Control-less Usage (Custom UI)
 
