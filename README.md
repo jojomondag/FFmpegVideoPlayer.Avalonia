@@ -91,20 +91,6 @@ dotnet run
 | `MediaOpened` | `MediaOpenedEventArgs` | Raised when media is successfully opened |
 | `MediaEnded` | `EventArgs` | Raised when media reaches the end |
 
-### Keyboard Shortcuts
-
-When `EnableKeyboardShortcuts` is `true`:
-
-| Key | Action |
-|-----|--------|
-| `Space` | Toggle play/pause |
-| `Left Arrow` | Seek backward 5 seconds (30s with Ctrl) |
-| `Right Arrow` | Seek forward 5 seconds (30s with Ctrl) |
-| `Up Arrow` | Increase volume by 5 |
-| `Down Arrow` | Decrease volume by 5 |
-| `M` | Toggle mute |
-
-
 ## Platform Support
 
 | Platform | Status |
