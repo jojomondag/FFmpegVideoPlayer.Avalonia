@@ -13,32 +13,6 @@ Self-contained FFmpeg video player for Avalonia UI.
 dotnet add package FFmpegVideoPlayer.Avalonia
 ```
 
-## Quick Start
-
-**Program.cs:**
-```csharp
-using Avalonia.FFmpegVideoPlayer;
-
-public static void Main(string[] args)
-{
-    FFmpegInitializer.Initialize();
-    BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
-}
-```
-
-**App.axaml:**
-```xml
-<Application.Styles>
-    <FluentTheme />
-    <materialIcons:MaterialIconStyles />
-</Application.Styles>
-```
-
-**MainWindow.axaml:**
-```xml
-<ffmpeg:VideoPlayerControl />
-```
-
 ## Try the Example
 
 ```bash
