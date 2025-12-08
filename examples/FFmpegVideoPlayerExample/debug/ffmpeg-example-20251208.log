@@ -21,3 +21,9 @@
 2025-12-08 07:28:26.517 +01:00 [INF] Playback started: C:\Users\Josef\Downloads\It.2017.1080p.BRRip.6CH.MkvCage.mkv
 2025-12-08 07:28:26.533 +01:00 [DBG] [AudioPlayer] Initial playback start with 8 queued buffers
 2025-12-08 07:28:40.866 +01:00 [INF] Playback paused: C:\Users\Josef\Downloads\It.2017.1080p.BRRip.6CH.MkvCage.mkv
+2025-12-08 07:34:40.480 +01:00 [INF] Playback started: C:\Users\Josef\Downloads\It.2017.1080p.BRRip.6CH.MkvCage.mkv
+2025-12-08 07:35:16.245 +01:00 [DBG] [FFmpegMediaPlayer] Dropping video frame to keep UI responsive.
+2025-12-08 07:35:16.276 +01:00 [DBG] [FFmpegMediaPlayer] Dropping video frame to keep UI responsive.
+2025-12-08 07:35:16.323 +01:00 [DBG] [FFmpegMediaPlayer] Dropping video frame to keep UI responsive.
+2025-12-08 07:35:16.369 +01:00 [DBG] [FFmpegMediaPlayer] Dropping video frame to keep UI responsive.
+2025-12-08 07:35:16.400 +01:00 [DBG] [FFmpegMediaPlayer] Dropping video frame to keep UI responsive.
