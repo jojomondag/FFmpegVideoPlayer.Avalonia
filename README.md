@@ -1,9 +1,9 @@
+[![NuGet](https://img.shields.io/nuget/v/FFmpegVideoPlayer.Avalonia.svg)](https://www.nuget.org/packages/FFmpegVideoPlayer.Avalonia/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 # FFmpegVideoPlayer.Avalonia
 
 Self-contained FFmpeg video player for Avalonia UI. FFmpeg libraries bundled - no installation required.
-
-[![NuGet](https://img.shields.io/nuget/v/FFmpegVideoPlayer.Avalonia.svg)](https://www.nuget.org/packages/FFmpegVideoPlayer.Avalonia/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ![Preview](https://raw.githubusercontent.com/jojomondag/FFmpegVideoPlayer.Avalonia/main/images/Preview1.png)
 
