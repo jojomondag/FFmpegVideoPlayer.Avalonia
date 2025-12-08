@@ -3,7 +3,7 @@
 
 # FFmpegVideoPlayer.Avalonia
 
-Self-contained FFmpeg video player for Avalonia UI. FFmpeg libraries bundled - no installation required.
+Self-contained FFmpeg video player for Avalonia UI.
 
 ![Preview](https://raw.githubusercontent.com/jojomondag/FFmpegVideoPlayer.Avalonia/main/images/Preview1.png)
 
