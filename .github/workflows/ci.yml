@@ -53,7 +53,9 @@ jobs:
 
           dotnet new console --name PackageSmoke --framework net8.0 --output "$consumer_dir" --no-restore
           dotnet new nugetconfig --output "$consumer_dir"
-          dotnet nuget add source "$package_dir" --name package-under-test --configfile "$consumer_dir/NuGet.Config"
+          nuget_config="$(find "$consumer_dir" -maxdepth 1 -iname 'nuget.config' -print -quit)"
+          test -n "$nuget_config"
+          dotnet nuget add source "$package_dir" --name package-under-test --configfile "$nuget_config"
           dotnet add "$consumer_dir/PackageSmoke.csproj" package FFmpegVideoPlayer.Avalonia --version "$package_version" --no-restore
 
           printf '%s\n' \
@@ -62,7 +64,7 @@ jobs:
             'Console.WriteLine($"{typeof(VideoPlayerControl).Assembly.GetName().Name}|{typeof(FFmpegInitializer).Assembly.GetName().Name}");' \
             > "$consumer_dir/Program.cs"
 
-          dotnet restore "$consumer_dir/PackageSmoke.csproj" --configfile "$consumer_dir/NuGet.Config"
+          dotnet restore "$consumer_dir/PackageSmoke.csproj" --configfile "$nuget_config"
           dotnet run --project "$consumer_dir/PackageSmoke.csproj" --configuration Release --no-restore
 
       - name: Upload standalone package
