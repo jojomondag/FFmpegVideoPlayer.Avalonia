@@ -29,5 +29,45 @@ jobs:
       - name: Build solution (Release)
         run: dotnet build FFmpegVideoPlayer.Avalonia.sln -c Release --no-restore
 
+      - name: Test solution (Release)
+        run: dotnet test FFmpegVideoPlayer.Avalonia.sln -c Release --no-build --no-restore
+
       - name: Build example app (Release)
-        run: dotnet build examples/FFmpegVideoPlayerExample/FFmpegVideoPlayerExample.csproj -c Release --no-restore
+        run: dotnet build examples/FFmpegVideoPlayerExample/FFmpegVideoPlayerExample.csproj -c Release
+
+      - name: Pack standalone NuGet package
+        if: matrix.dotnet-version == '10.0.x'
+        run: dotnet pack Avalonia.FFmpegVideoPlayer.csproj -c Release -o artifacts/package
+
+      - name: Validate package in a clean consumer
+        if: matrix.dotnet-version == '10.0.x'
+        shell: bash
+        env:
+          NUGET_PACKAGES: ${{ runner.temp }}/ffmpeg-player-smoke-nuget
+        run: |
+          set -euo pipefail
+
+          package_dir="$GITHUB_WORKSPACE/artifacts/package"
+          consumer_dir="$RUNNER_TEMP/ffmpeg-player-package-smoke"
+          package_version="$(dotnet msbuild Avalonia.FFmpegVideoPlayer.csproj -nologo -getProperty:Version -p:Configuration=Release)"
+
+          dotnet new console --name PackageSmoke --framework net8.0 --output "$consumer_dir" --no-restore
+          dotnet new nugetconfig --output "$consumer_dir"
+          dotnet nuget add source "$package_dir" --name package-under-test --configfile "$consumer_dir/NuGet.Config"
+          dotnet add "$consumer_dir/PackageSmoke.csproj" package FFmpegVideoPlayer.Avalonia --version "$package_version" --no-restore
+
+          printf '%s\n' \
+            'using Avalonia.FFmpegVideoPlayer;' \
+            'using FFmpegVideoPlayer.Core;' \
+            'Console.WriteLine($"{typeof(VideoPlayerControl).Assembly.GetName().Name}|{typeof(FFmpegInitializer).Assembly.GetName().Name}");' \
+            > "$consumer_dir/Program.cs"
+
+          dotnet restore "$consumer_dir/PackageSmoke.csproj" --configfile "$consumer_dir/NuGet.Config"
+          dotnet run --project "$consumer_dir/PackageSmoke.csproj" --configuration Release --no-restore
+
+      - name: Upload standalone package
+        if: matrix.dotnet-version == '10.0.x'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FFmpegVideoPlayer.Avalonia
+          path: artifacts/package/*.nupkg

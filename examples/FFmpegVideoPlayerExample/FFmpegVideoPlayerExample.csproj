@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <IsPackable>false</IsPackable>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -9,15 +10,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="12.0.1" />
-    <PackageReference Include="Avalonia.Desktop" Version="12.0.1" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.1" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.1" />
+    <PackageReference Include="Avalonia" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="Avalonia.Desktop" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="$(AvaloniaVersion)" />
     <PackageReference Include="Serilog" Version="3.1.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="5.0.0" />
-    <!-- Optional: Audio support via OpenTK -->
-    <ProjectReference Include="../../FFmpegVideoPlayer.Audio.OpenTK/FFmpegVideoPlayer.Audio.OpenTK.csproj" />
   </ItemGroup>
 
   <!-- Reference the main library project for development/testing -->
@@ -25,38 +24,4 @@
     <ProjectReference Include="../../Avalonia.FFmpegVideoPlayer.csproj" />
   </ItemGroup>
 
-  <!-- Copy FFmpeg native libraries from the main project's runtimes folder -->
-  <Target Name="CopyFFmpegNativeLibraries" AfterTargets="Build">
-    <PropertyGroup>
-      <FFmpegRuntimesSource>$(MSBuildThisFileDirectory)..\..\FFmpegVideoPlayer.Core\runtimes\</FFmpegRuntimesSource>
-    </PropertyGroup>
-    <ItemGroup>
-      <FFmpegNativeFiles Include="$(FFmpegRuntimesSource)**\*.*" Exclude="$(FFmpegRuntimesSource)README.md" />
-    </ItemGroup>
-    <Copy SourceFiles="@(FFmpegNativeFiles)"
-          DestinationFiles="@(FFmpegNativeFiles->'$(OutDir)runtimes\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true"
-          Condition="'@(FFmpegNativeFiles)' != ''" />
-    <Message Text="Copied FFmpeg native libraries to $(OutDir)runtimes\" Importance="high" />
-  </Target>
-  
-  <!-- Copy OpenAL native libraries for audio support -->
-  <ItemGroup>
-    <!-- Include OpenAL32.dll as content that copies to output -->
-    <ContentWithTargetPath Include="$(NuGetPackageRoot)openal.soft\1.19.1\runtimes\win-x64\native\OpenAL32.dll"
-                           Condition="'$(NuGetPackageRoot)' != '' AND Exists('$(NuGetPackageRoot)openal.soft\1.19.1\runtimes\win-x64\native\OpenAL32.dll')">
-      <TargetPath>OpenAL32.dll</TargetPath>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </ContentWithTargetPath>
-    <ContentWithTargetPath Include="$(NuGetPackageRoot)openal.soft\1.19.1\runtimes\win-x64\native\OpenAL32.dll"
-                           Condition="'$(NuGetPackageRoot)' != '' AND Exists('$(NuGetPackageRoot)openal.soft\1.19.1\runtimes\win-x64\native\OpenAL32.dll')">
-      <TargetPath>runtimes\win-x64\native\OpenAL32.dll</TargetPath>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </ContentWithTargetPath>
-    <ContentWithTargetPath Include="$(NuGetPackageRoot)openal.soft\1.19.1\runtimes\win-x86\native\OpenAL32.dll"
-                           Condition="'$(NuGetPackageRoot)' != '' AND Exists('$(NuGetPackageRoot)openal.soft\1.19.1\runtimes\win-x86\native\OpenAL32.dll')">
-      <TargetPath>runtimes\win-x86\native\OpenAL32.dll</TargetPath>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </ContentWithTargetPath>
-  </ItemGroup>
 </Project>

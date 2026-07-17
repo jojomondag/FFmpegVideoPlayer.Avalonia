@@ -10,12 +10,12 @@
     <PackageId>FFmpegVideoPlayer.Avalonia</PackageId>
     <AssemblyName>Avalonia.FFmpegVideoPlayer</AssemblyName>
     <RootNamespace>Avalonia.FFmpegVideoPlayer</RootNamespace>
-    <Version>2.9.0</Version>
+    <IsPackable>true</IsPackable>
     <Authors>jojomondag</Authors>
     <Company>jojomondag</Company>
-    <Description>FFmpeg media player for Avalonia UI with video and audio-only playback. Windows FFmpeg binaries bundled; macOS and Linux users get auto-install via Homebrew/apt/dnf/pacman on first run.</Description>
-    <PackageReleaseNotes>v2.9.0: Adds audio-only playback support in VideoPlayerControl and fixes OpenAL audio queue loss that could make audio end early or sound too fast. v2.8.1: Fix #4 — rebuilt against Avalonia 12.0.1 to resolve ReflectionBindingExtension.ProvideValue MissingMethodException in Avalonia 12.x apps. v2.8.0: Close #1 — Linux auto-install via apt/dnf/pacman (with sudo -n), matching the existing macOS Homebrew flow. macOS x64 (Intel) Homebrew was already supported. v2.7.1: Fix #3 — frame-accurate slider seeking. v2.7.0: Fix #2 — macOS NotSupportedException at avformat_open_input (bundled osx-arm64 dylibs removed; initializer validates load and falls back). v2.6.3: OpenAL default audio.</PackageReleaseNotes>
-    <PackageTags>avalonia;ffmpeg;video;audio;player;media;cross-platform;arm64;self-contained</PackageTags>
+    <Description>Standalone FFmpeg media player for Avalonia 12. Bundles FFmpeg for Windows x64; other OS/architectures use a compatible system FFmpeg installation.</Description>
+    <PackageReleaseNotes>v3.0.0: Targets Avalonia 12.1, ships as one standalone package, adds typed and asynchronous media sources, built-in YouTube resolution, bounded/cancellable network I/O, lifecycle state, and structured media errors.</PackageReleaseNotes>
+    <PackageTags>avalonia;ffmpeg;video;audio;player;media;cross-platform;windows-x64;system-ffmpeg</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/jojomondag/FFmpegVideoPlayer.Avalonia</PackageProjectUrl>
     <RepositoryUrl>https://github.com/jojomondag/FFmpegVideoPlayer.Avalonia</RepositoryUrl>
@@ -27,6 +27,7 @@
     
     <!-- Prevent duplicate assembly info generation -->
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);PackProjectReferenceOutputs</TargetsForTfmSpecificBuildOutput>
   </PropertyGroup>
 
   <!-- Exclude examples folder, Core files, and Audio.OpenTK from compilation -->
@@ -35,6 +36,10 @@
     <AvaloniaXaml Remove="examples/**/*.axaml" />
     <AvaloniaResource Remove="examples/**/*" />
     <None Remove="examples/**/*" />
+    <Compile Remove="tests/**/*.cs" />
+    <AvaloniaXaml Remove="tests/**/*.axaml" />
+    <AvaloniaResource Remove="tests/**/*" />
+    <None Remove="tests/**/*" />
     <!-- Remove Core files - they're now in the Core project -->
     <Compile Remove="AudioPlayer.cs" />
     <Compile Remove="FFmpegInitializer.cs" />
@@ -50,19 +55,50 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="12.0.4" />
+    <PackageReference Include="Avalonia" Version="[$(AvaloniaVersion),13.0.0)" />
+    <PackageReference Include="FFmpeg.AutoGen" Version="8.0.0.1" />
+    <PackageReference Include="YoutubeExplode" Version="6.6.0" />
+    <PackageReference Include="OpenTK.Audio.OpenAL" Version="4.9.4" />
+    <PackageReference Include="OpenAL.Soft" Version="1.23.1" GeneratePathProperty="true" PrivateAssets="all" />
   </ItemGroup>
 
   <!-- Core + OpenTK audio (OpenAL) so playback has sound by default; override via AudioPlayerFactory property if needed -->
   <ItemGroup>
-    <ProjectReference Include="FFmpegVideoPlayer.Core\FFmpegVideoPlayer.Core.csproj" />
-    <ProjectReference Include="FFmpegVideoPlayer.Audio.OpenTK\FFmpegVideoPlayer.Audio.OpenTK.csproj" />
+    <ProjectReference Include="FFmpegVideoPlayer.Core\FFmpegVideoPlayer.Core.csproj" PrivateAssets="all" />
+    <ProjectReference Include="FFmpegVideoPlayer.Audio.OpenTK\FFmpegVideoPlayer.Audio.OpenTK.csproj" PrivateAssets="all" />
   </ItemGroup>
 
-  <!-- Include README and images in package -->
+  <!-- Include documentation, third-party license texts, and images in package -->
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="" />
+    <None Include="THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="" />
+    <None Include="LICENSES/GPL-3.0.txt" Pack="true" PackagePath="LICENSES/" />
+    <None Include="LICENSES/LGPL-2.0-or-later.txt" Pack="true" PackagePath="LICENSES/" />
+    <None Include="LICENSES/LGPL-3.0-or-later.txt" Pack="true" PackagePath="LICENSES/" />
     <None Include="images/Preview1.png" Pack="true" PackagePath="images/" />
+  </ItemGroup>
+
+  <!-- OpenAL.Soft stores release binaries below an extra Release folder, so include
+       them explicitly at conventional runtime paths in the single public package. -->
+  <ItemGroup>
+    <None Include="$(PkgOpenAL_Soft)\runtimes\win-x64\native\Release\OpenAL32.dll"
+          Pack="true" PackagePath="runtimes/win-x64/native/"
+          Link="runtimes/win-x64/native/OpenAL32.dll"
+          TargetPath="runtimes/win-x64/native/OpenAL32.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('$(PkgOpenAL_Soft)\runtimes\win-x64\native\Release\OpenAL32.dll')" />
+    <None Include="$(PkgOpenAL_Soft)\runtimes\win-x86\native\Release\OpenAL32.dll"
+          Pack="true" PackagePath="runtimes/win-x86/native/"
+          Link="runtimes/win-x86/native/OpenAL32.dll"
+          TargetPath="runtimes/win-x86/native/OpenAL32.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('$(PkgOpenAL_Soft)\runtimes\win-x86\native\Release\OpenAL32.dll')" />
+    <None Include="$(PkgOpenAL_Soft)\runtimes\win-arm64\native\Release\OpenAL32.dll"
+          Pack="true" PackagePath="runtimes/win-arm64/native/"
+          Link="runtimes/win-arm64/native/OpenAL32.dll"
+          TargetPath="runtimes/win-arm64/native/OpenAL32.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('$(PkgOpenAL_Soft)\runtimes\win-arm64\native\Release\OpenAL32.dll')" />
   </ItemGroup>
 
   <!-- 
@@ -113,8 +149,23 @@
       <NativeRuntimeFiles Include="runtimes/**/*.*" Exclude="runtimes/README.md" />
     </ItemGroup>
     <Copy SourceFiles="@(NativeRuntimeFiles)"
-          DestinationFiles="@(NativeRuntimeFiles->'$(OutDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          DestinationFiles="@(NativeRuntimeFiles->'$(OutDir)runtimes\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true"
           Condition="'@(NativeRuntimeFiles)' != ''" />
+  </Target>
+
+  <!-- Core and Audio stay implementation projects. Their assemblies are embedded in
+       FFmpegVideoPlayer.Avalonia instead of becoming separate NuGet dependencies. -->
+  <Target Name="PackProjectReferenceOutputs"
+          DependsOnTargets="BuildOnlySettings;ResolveReferences">
+    <ItemGroup>
+      <_EmbeddedProjectAssembly
+          Include="@(ReferenceCopyLocalPaths)"
+          Condition="'%(ReferenceCopyLocalPaths.ReferenceSourceTarget)' == 'ProjectReference' and '%(ReferenceCopyLocalPaths.Extension)' == '.dll'" />
+      <BuildOutputInPackage Include="@(_EmbeddedProjectAssembly)">
+        <FinalOutputPath>%(_EmbeddedProjectAssembly.FullPath)</FinalOutputPath>
+        <TargetPath>%(_EmbeddedProjectAssembly.Filename)%(_EmbeddedProjectAssembly.Extension)</TargetPath>
+      </BuildOutputInPackage>
+    </ItemGroup>
   </Target>
 </Project>

@@ -1,6 +1,4 @@
 using FFmpegVideoPlayer.Core;
-using OpenTK.Audio.OpenAL;
-
 namespace FFmpegVideoPlayer.Audio.OpenTK;
 
 /// <summary>
@@ -16,22 +14,7 @@ public static class AudioPlayerFactory
     {
         try
         {
-            var device = ALC.OpenDevice(null);
-            if (device == ALDevice.Null)
-            {
-                return false;
-            }
-            
-            var context = ALC.CreateContext(device, (int[]?)null);
-            if (context == ALContext.Null)
-            {
-                ALC.CloseDevice(device);
-                return false;
-            }
-            
-            ALC.MakeContextCurrent(context);
-            ALC.DestroyContext(context);
-            ALC.CloseDevice(device);
+            using var probe = new OpenTKAudioPlayer(8_000, 1);
             return true;
         }
         catch
@@ -52,15 +35,6 @@ public static class AudioPlayerFactory
     /// </remarks>
     public static IAudioPlayer? Create(int sampleRate, int channels)
     {
-        // First check if OpenAL is available
-        if (!IsOpenALAvailable())
-        {
-            System.Diagnostics.Debug.WriteLine($"[AudioPlayerFactory] OpenAL is not available on this system.");
-            System.Diagnostics.Debug.WriteLine($"[AudioPlayerFactory] On Windows, ensure OpenAL Soft is installed or openal32.dll is available.");
-            System.Diagnostics.Debug.WriteLine($"[AudioPlayerFactory] Download from: https://www.openal-soft.org/downloads/");
-            return null;
-        }
-        
         try
         {
             return new OpenTKAudioPlayer(sampleRate, channels);
