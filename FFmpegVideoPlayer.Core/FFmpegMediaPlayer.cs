@@ -1,10 +1,13 @@
 using System;
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using FFmpeg.AutoGen;
 
 namespace FFmpegVideoPlayer.Core;
@@ -14,8 +17,9 @@ namespace FFmpegVideoPlayer.Core;
 /// Provides cross-platform support including ARM64 macOS.
 /// Uses FFmpeg.AutoGen 8.x bindings (requires FFmpeg 8.x / libavcodec.62).
 /// </summary>
-public sealed unsafe class FFmpegMediaPlayer : IDisposable
+public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDisposable
 {
+    private static readonly AVIOInterruptCB_callback InterruptCallbackDelegate = InterruptCallback;
     private AVFormatContext* _formatContext;
     private AVCodecContext* _videoCodecContext;
     private AVCodecContext* _audioCodecContext;
@@ -32,10 +36,31 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
     
     private Thread? _playbackThread;
     private CancellationTokenSource? _cancellationTokenSource;
+    private readonly SemaphoreSlim _openGate = new(1, 1);
+    private int _openGateHeld;
+    private readonly object _openOperationLock = new();
+    private readonly ConcurrentQueue<Action> _eventQueue = new();
+    private int _eventPumpScheduled;
+    private CancellationTokenSource? _activeOpenCancellation;
+    private MediaSourceSession? _mediaSession;
+    private GCHandle _interruptHandle;
+    private CancellationToken _ioCancellationToken;
+    private long _ioDeadlineTimestamp;
+    private int _interruptRequested;
+    private int _ioTimedOut;
+    private TimeSpan _readTimeout = MediaOpenOptions.Default.ReadTimeout;
     
     private bool _isPlaying;
     private bool _isPaused;
     private bool _isDisposed;
+    private bool _isClosing;
+    private int _disposeState;
+    private readonly TaskCompletionSource _disposeCompletion = new(
+        TaskCreationOptions.RunContinuationsAsynchronously);
+    private PlaybackState _state = PlaybackState.Closed;
+    private MediaInfo? _mediaInfo;
+    private MediaSource? _mediaSource;
+    private MediaError? _lastError;
     private double _position;
     private double _duration;
     private int _volume = 100;
@@ -144,12 +169,22 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
     {
         _synchronizationCallback = synchronizationCallback;
         _audioPlayerFactory = audioPlayerFactory;
+        _interruptHandle = GCHandle.Alloc(this, GCHandleType.Normal);
     }
 
     /// <summary>
     /// Gets whether media is currently playing.
     /// </summary>
     public bool IsPlaying => _isPlaying && !_isPaused;
+
+    /// <summary>Gets the current lifecycle state.</summary>
+    public PlaybackState State => _state;
+
+    /// <summary>Gets information about the currently opened media.</summary>
+    public MediaInfo? MediaInfo => _mediaInfo;
+
+    /// <summary>Gets the most recent media failure.</summary>
+    public MediaError? LastError => _lastError;
 
     /// <summary>
     /// Gets the current position as a percentage (0.0 to 1.0).
@@ -231,43 +266,109 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
     /// </summary>
     public event EventHandler? EndReached;
 
-    /// <summary>
-    /// Opens a media file for playback.
-    /// </summary>
-    /// <param name="path">The path to the media file.</param>
-    /// <returns>True if the file was opened successfully.</returns>
-    public bool Open(string path)
+    /// <summary>Raised when an open or playback operation fails.</summary>
+    public event EventHandler<MediaFailedEventArgs>? MediaFailed;
+
+    /// <summary>Raised whenever <see cref="State"/> changes.</summary>
+    public event EventHandler<PlaybackStateChangedEventArgs>? StateChanged;
+
+    /// <summary>Opens a local path, direct URI, or supported provider URL.</summary>
+    public bool Open(string path) => Open(MediaSource.FromLocation(path)).Succeeded;
+
+    /// <summary>Synchronously opens a typed media source.</summary>
+    public MediaOpenResult Open(
+        MediaSource source,
+        MediaOpenOptions? options = null,
+        CancellationToken cancellationToken = default) =>
+        OpenAsync(source, options, cancellationToken).GetAwaiter().GetResult();
+
+    /// <summary>Cancels source resolution and blocking FFmpeg I/O.</summary>
+    public void CancelPendingOpen()
+    {
+        var hasActiveOpen = false;
+        lock (_openOperationLock)
+        {
+            if (_activeOpenCancellation is not null)
+            {
+                hasActiveOpen = true;
+                _activeOpenCancellation.Cancel();
+            }
+        }
+
+        if (hasActiveOpen)
+            Interlocked.Exchange(ref _interruptRequested, 1);
+    }
+
+    private void RollbackFailedOpen(MediaSourceSession? session)
     {
         lock (_lock)
         {
+            if (ReferenceEquals(_mediaSession, session))
+                _mediaSession = null;
+            CloseInternal();
+            _mediaInfo = null;
+            _mediaSource = null;
+        }
+    }
+
+    private MediaSourceSession? ResetForOpen()
+        => CloseWhileOpenGateHeld();
+
+    private bool OpenResolved(
+        string path,
+        MediaSource source,
+        MediaSourceSession session,
+        MediaOpenOptions options,
+        CancellationToken cancellationToken)
+    {
+        var displayName = source.DisplayName;
+        long? openedLength = null;
+        lock (_lock)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Interlocked.Exchange(ref _interruptRequested, 0);
+            Interlocked.Exchange(ref _ioTimedOut, 0);
+            _lastError = null;
+            _mediaInfo = null;
+            _readTimeout = options.ReadTimeout;
+
             // Clear logs when opening a new movie
             _logger.Clear();
-            _logger.Log("FFmpegMediaPlayer", "MovieLoadingStarted", new { Path = path, Timestamp = DateTime.Now });
+            _logger.Log("FFmpegMediaPlayer", "MediaLoadingStarted", new { DisplayName = displayName });
             
-            CloseInternal();
-
             _pendingFrameCount = 0;
             _droppedFrames = 0;
 
-            _logger.Log("FFmpegMediaPlayer", "OpeningMediaFile", new { Path = path });
-            
-            fixed (AVFormatContext** formatContext = &_formatContext)
+            _logger.Log("FFmpegMediaPlayer", "OpeningMedia", new { DisplayName = displayName });
+
+            var openResult = OpenFormatContext(path, session, options.OpenTimeout, cancellationToken);
+            if (openResult < 0)
             {
-                if (ffmpeg.avformat_open_input(formatContext, path, null, null) != 0)
-                {
-                    Debug.WriteLine($"[FFmpegMediaPlayer] Failed to open media: {path}");
-                    _logger.Log("FFmpegMediaPlayer", "OpenFailed", new { Path = path, Reason = "avformat_open_input failed" });
-                    return false;
-                }
+                _lastError = CreateMediaError(openResult, displayName, cancellationToken);
+                _logger.Log("FFmpegMediaPlayer", "OpenFailed", new { DisplayName = displayName, NativeError = openResult });
+                CloseInternal();
+                return false;
             }
             
-            _logger.Log("FFmpegMediaPlayer", "MediaFileOpened", new { Path = path });
+            _logger.Log("FFmpegMediaPlayer", "MediaFileOpened", new { DisplayName = displayName });
 
             _logger.Log("FFmpegMediaPlayer", "ReadingStreamInfo", null);
-            if (ffmpeg.avformat_find_stream_info(_formatContext, null) < 0)
+            BeginIo(cancellationToken, options.OpenTimeout);
+            int streamInfoResult;
+            try
+            {
+                streamInfoResult = ffmpeg.avformat_find_stream_info(_formatContext, null);
+            }
+            finally
+            {
+                EndIo();
+            }
+
+            if (streamInfoResult < 0)
             {
                 Debug.WriteLine("[FFmpegMediaPlayer] Failed to read stream info.");
-                _logger.Log("FFmpegMediaPlayer", "StreamInfoFailed", new { Reason = "avformat_find_stream_info failed" });
+                _lastError = CreateMediaError(streamInfoResult, displayName, cancellationToken);
+                _logger.Log("FFmpegMediaPlayer", "StreamInfoFailed", new { NativeError = streamInfoResult });
                 CloseInternal();
                 return false;
             }
@@ -394,6 +495,9 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
             if (_videoStreamIndex < 0 && _audioStreamIndex < 0)
             {
                 Debug.WriteLine("[FFmpegMediaPlayer] No playable streams found in media.");
+                _lastError = new MediaError(
+                    MediaErrorCode.UnsupportedFormat,
+                    $"'{displayName}' contains no audio or video streams supported by FFmpeg.");
                 CloseInternal();
                 return false;
             }
@@ -477,6 +581,18 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
             if (_videoStreamIndex < 0 && _audioStreamIndex < 0)
             {
                 Debug.WriteLine("[FFmpegMediaPlayer] Media does not contain a supported audio or video stream.");
+                _lastError = new MediaError(
+                    MediaErrorCode.DecoderUnavailable,
+                    $"No decoder is available for the audio or video in '{displayName}'.");
+                CloseInternal();
+                return false;
+            }
+
+            if (_videoStreamIndex < 0 && _audioStreamIndex >= 0 && _audioPlayer is null)
+            {
+                _lastError = new MediaError(
+                    MediaErrorCode.AudioOutputUnavailable,
+                    $"No audio output is available for '{displayName}'.");
                 CloseInternal();
                 return false;
             }
@@ -485,7 +601,7 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
             if (_formatContext->duration != ffmpeg.AV_NOPTS_VALUE)
             {
                 _duration = _formatContext->duration / (double)ffmpeg.AV_TIME_BASE;
-                LengthChanged?.Invoke(this, new LengthChangedEventArgs((long)(_duration * 1000)));
+                openedLength = (long)(_duration * 1000);
             }
 
             // Allocate packet
@@ -494,6 +610,9 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
             {
                 Debug.WriteLine("[FFmpegMediaPlayer] Failed to allocate packet.");
                 _logger.Log("FFmpegMediaPlayer", "PacketAllocationFailed", null);
+                _lastError = new MediaError(
+                    MediaErrorCode.PlaybackFailed,
+                    $"FFmpeg could not allocate a packet for '{displayName}'.");
                 CloseInternal();
                 return false;
             }
@@ -510,9 +629,9 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
             _pauseStartTime = 0;
             _seekTargetPts = -1;
 
-            _logger.Log("FFmpegMediaPlayer", "MovieLoadingCompleted", new
+            _logger.Log("FFmpegMediaPlayer", "MediaLoadingCompleted", new
             { 
-                Path = path,
+                DisplayName = displayName,
                 Duration = _duration,
                 VideoStreamIndex = _videoStreamIndex,
                 AudioStreamIndex = _audioStreamIndex,
@@ -522,7 +641,211 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
                 Timestamp = DateTime.Now
             });
 
-            return true;
+            _mediaSession = session;
+            _mediaSource = source;
+            _mediaInfo = new MediaInfo(
+                displayName,
+                TimeSpan.FromSeconds(_duration),
+                HasVideo,
+                HasAudio,
+                _videoWidth,
+                _videoHeight);
+        }
+
+        if (openedLength is long length)
+            RaiseSynchronized(() => LengthChanged?.Invoke(this, new LengthChangedEventArgs(length)));
+        SetState(PlaybackState.Ready);
+        return true;
+    }
+
+    private int OpenFormatContext(
+        string location,
+        MediaSourceSession session,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        AVDictionary* dictionary = null;
+        try
+        {
+            foreach (var (key, value) in session.FFmpegOptions)
+                ffmpeg.av_dict_set(&dictionary, key, value, 0);
+
+            if (session.Headers.Count > 0)
+            {
+                var headers = string.Concat(session.Headers.Select(pair => $"{pair.Key}: {pair.Value}\r\n"));
+                ffmpeg.av_dict_set(&dictionary, "headers", headers, 0);
+            }
+
+            _formatContext = ffmpeg.avformat_alloc_context();
+            if (_formatContext == null)
+                return ffmpeg.AVERROR(12); // ENOMEM
+
+            _formatContext->interrupt_callback = new AVIOInterruptCB
+            {
+                callback = InterruptCallbackDelegate,
+                opaque = (void*)GCHandle.ToIntPtr(_interruptHandle)
+            };
+
+            BeginIo(cancellationToken, timeout);
+            var context = _formatContext;
+            var result = ffmpeg.avformat_open_input(&context, location, null, &dictionary);
+            _formatContext = context;
+            return result;
+        }
+        finally
+        {
+            EndIo();
+            ffmpeg.av_dict_free(&dictionary);
+        }
+    }
+
+    private void BeginIo(CancellationToken cancellationToken, TimeSpan timeout)
+    {
+        _ioCancellationToken = cancellationToken;
+        var timeoutTicks = timeout.TotalSeconds * Stopwatch.Frequency;
+        Volatile.Write(
+            ref _ioDeadlineTimestamp,
+            Stopwatch.GetTimestamp() + (long)Math.Min(timeoutTicks, long.MaxValue / 4d));
+    }
+
+    private void EndIo()
+    {
+        _ioCancellationToken = default;
+        Volatile.Write(ref _ioDeadlineTimestamp, 0);
+    }
+
+    private static int InterruptCallback(void* opaque)
+    {
+        if (opaque == null)
+            return 0;
+
+        try
+        {
+            var handle = GCHandle.FromIntPtr((IntPtr)opaque);
+            if (handle.Target is not FFmpegMediaPlayer player)
+                return 1;
+            if (Volatile.Read(ref player._interruptRequested) != 0
+                || player._ioCancellationToken.IsCancellationRequested)
+                return 1;
+
+            var deadline = Volatile.Read(ref player._ioDeadlineTimestamp);
+            if (deadline > 0 && Stopwatch.GetTimestamp() >= deadline)
+            {
+                Interlocked.Exchange(ref player._ioTimedOut, 1);
+                return 1;
+            }
+
+            return 0;
+        }
+        catch
+        {
+            return 1;
+        }
+    }
+
+    private MediaError CreateMediaError(
+        int nativeErrorCode,
+        string displayName,
+        CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested || Volatile.Read(ref _interruptRequested) != 0)
+            return new MediaError(MediaErrorCode.Cancelled, $"Opening '{displayName}' was cancelled.", nativeErrorCode);
+        if (Volatile.Read(ref _ioTimedOut) != 0)
+            return new MediaError(MediaErrorCode.Timeout, $"Opening '{displayName}' timed out.", nativeErrorCode);
+
+        var nativeMessage = GetFFmpegError(nativeErrorCode);
+        return new MediaError(
+            MediaErrorCode.UnsupportedFormat,
+            $"FFmpeg could not open '{displayName}': {nativeMessage}",
+            nativeErrorCode);
+    }
+
+    private static string GetFFmpegError(int errorCode)
+    {
+        const int bufferSize = 1024;
+        var buffer = stackalloc byte[bufferSize];
+        return ffmpeg.av_strerror(errorCode, buffer, bufferSize) == 0
+            ? Marshal.PtrToStringUTF8((IntPtr)buffer) ?? $"FFmpeg error {errorCode}"
+            : $"FFmpeg error {errorCode}";
+    }
+
+    private void SetState(PlaybackState state)
+    {
+        var previous = _state;
+        if (previous == state)
+            return;
+        _state = state;
+        RaiseSynchronized(() => StateChanged?.Invoke(
+            this,
+            new PlaybackStateChangedEventArgs(previous, state)));
+    }
+
+    private void RaiseMediaFailed(MediaError error, MediaSource? source = null)
+    {
+        var failedSource = source ?? _mediaSource;
+        RaiseSynchronized(() => MediaFailed?.Invoke(
+            this,
+            new MediaFailedEventArgs(error, failedSource)));
+    }
+
+    private void RaiseSynchronized(Action action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        _eventQueue.Enqueue(action);
+        if (Interlocked.CompareExchange(ref _eventPumpScheduled, 1, 0) == 0)
+            ThreadPool.QueueUserWorkItem(_ => PumpEvents());
+    }
+
+    private void PumpEvents()
+    {
+        while (true)
+        {
+            while (_eventQueue.TryDequeue(out var action))
+                DispatchEventSafely(action);
+
+            Interlocked.Exchange(ref _eventPumpScheduled, 0);
+            if (_eventQueue.IsEmpty ||
+                Interlocked.CompareExchange(ref _eventPumpScheduled, 1, 0) != 0)
+            {
+                return;
+            }
+        }
+    }
+
+    private void DispatchEventSafely(Action action)
+    {
+        void Invoke()
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[FFmpegMediaPlayer] Event subscriber failed: {ex.Message}");
+                _logger.Log("FFmpegMediaPlayer", "EventSubscriberFailed", new
+                {
+                    Exception = ex.GetType().Name,
+                    ex.Message
+                });
+            }
+        }
+
+        try
+        {
+            if (_synchronizationCallback is not null)
+                _synchronizationCallback(Invoke);
+            else
+                Invoke();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[FFmpegMediaPlayer] Event dispatch failed: {ex.Message}");
+            _logger.Log("FFmpegMediaPlayer", "EventDispatchFailed", new
+            {
+                Exception = ex.GetType().Name,
+                ex.Message
+            });
         }
     }
 
@@ -538,13 +861,15 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
         }
 
         _videoCodecContext = ffmpeg.avcodec_alloc_context3(codec);
+        if (_videoCodecContext == null)
+            return false;
         if (ffmpeg.avcodec_parameters_to_context(_videoCodecContext, codecParams) < 0)
         {
             return false;
         }
 
         // Enable multi-threaded decoding
-        _videoCodecContext->thread_count = Math.Max(1, Environment.ProcessorCount - 1);
+        _videoCodecContext->thread_count = Math.Clamp(Environment.ProcessorCount - 1, 1, 16);
         _videoCodecContext->thread_type = ffmpeg.FF_THREAD_FRAME | ffmpeg.FF_THREAD_SLICE;
 
         if (ffmpeg.avcodec_open2(_videoCodecContext, codec, null) < 0)
@@ -554,6 +879,8 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
 
         _videoWidth = _videoCodecContext->width;
         _videoHeight = _videoCodecContext->height;
+        if (_videoWidth <= 0 || _videoHeight <= 0)
+            return false;
 
         // Calculate frame rate
         var timeBase = stream->avg_frame_rate;
@@ -564,16 +891,30 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
         // Allocate frames
         _frame = ffmpeg.av_frame_alloc();
         _rgbFrame = ffmpeg.av_frame_alloc();
+        if (_frame == null || _rgbFrame == null)
+            return false;
 
         // Set up RGB frame
         _rgbBufferSize = ffmpeg.av_image_get_buffer_size(AVPixelFormat.AV_PIX_FMT_BGRA, _videoWidth, _videoHeight, 1);
+        if (_rgbBufferSize <= 0)
+            return false;
         _rgbBuffer = (byte*)ffmpeg.av_malloc((ulong)_rgbBufferSize);
+        if (_rgbBuffer == null)
+            return false;
 
         // Fill the RGB frame data pointers using ref parameters
         byte_ptrArray4 dataPtr = new byte_ptrArray4();
         int_array4 linesizePtr = new int_array4();
         
-        ffmpeg.av_image_fill_arrays(ref dataPtr, ref linesizePtr, _rgbBuffer, AVPixelFormat.AV_PIX_FMT_BGRA, _videoWidth, _videoHeight, 1);
+        if (ffmpeg.av_image_fill_arrays(
+                ref dataPtr,
+                ref linesizePtr,
+                _rgbBuffer,
+                AVPixelFormat.AV_PIX_FMT_BGRA,
+                _videoWidth,
+                _videoHeight,
+                1) < 0)
+            return false;
         
         _rgbFrame->data[0] = dataPtr[0];
         _rgbFrame->data[1] = dataPtr[1];
@@ -606,6 +947,8 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
         }
 
         _audioCodecContext = ffmpeg.avcodec_alloc_context3(codec);
+        if (_audioCodecContext == null)
+            return false;
         if (ffmpeg.avcodec_parameters_to_context(_audioCodecContext, codecParams) < 0)
         {
             Debug.WriteLine("[FFmpegMediaPlayer] Failed to copy audio codec params");
@@ -623,30 +966,35 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
         {
             var sampleRate = _audioCodecContext->sample_rate;
             var channels = _audioCodecContext->ch_layout.nb_channels;
+            if (sampleRate <= 0 || channels <= 0)
+                return false;
             Debug.WriteLine($"[FFmpegMediaPlayer] Audio: sampleRate={sampleRate}, channels={channels}");
             
             // Initialize SwrContext for audio resampling to stereo S16
             _swrContext = ffmpeg.swr_alloc();
+            if (_swrContext == null)
+                return false;
             
             // Set input options
             AVChannelLayout inChLayout = _audioCodecContext->ch_layout;
-            ffmpeg.av_opt_set_chlayout(_swrContext, "in_chlayout", &inChLayout, 0);
-            ffmpeg.av_opt_set_int(_swrContext, "in_sample_rate", sampleRate, 0);
-            ffmpeg.av_opt_set_sample_fmt(_swrContext, "in_sample_fmt", _audioCodecContext->sample_fmt, 0);
+            var optionResult = ffmpeg.av_opt_set_chlayout(_swrContext, "in_chlayout", &inChLayout, 0);
+            optionResult |= ffmpeg.av_opt_set_int(_swrContext, "in_sample_rate", sampleRate, 0);
+            optionResult |= ffmpeg.av_opt_set_sample_fmt(_swrContext, "in_sample_fmt", _audioCodecContext->sample_fmt, 0);
             
             // Set output options - stereo S16 for OpenAL
             AVChannelLayout outChLayout;
             ffmpeg.av_channel_layout_default(&outChLayout, 2); // Stereo
-            ffmpeg.av_opt_set_chlayout(_swrContext, "out_chlayout", &outChLayout, 0);
-            ffmpeg.av_opt_set_int(_swrContext, "out_sample_rate", sampleRate, 0);
-            ffmpeg.av_opt_set_sample_fmt(_swrContext, "out_sample_fmt", AVSampleFormat.AV_SAMPLE_FMT_S16, 0);
+            optionResult |= ffmpeg.av_opt_set_chlayout(_swrContext, "out_chlayout", &outChLayout, 0);
+            optionResult |= ffmpeg.av_opt_set_int(_swrContext, "out_sample_rate", sampleRate, 0);
+            optionResult |= ffmpeg.av_opt_set_sample_fmt(_swrContext, "out_sample_fmt", AVSampleFormat.AV_SAMPLE_FMT_S16, 0);
             
-            if (ffmpeg.swr_init(_swrContext) < 0)
+            if (optionResult < 0 || ffmpeg.swr_init(_swrContext) < 0)
             {
                 Debug.WriteLine("[FFmpegMediaPlayer] Failed to initialize SwrContext");
                 var ctx = _swrContext;
                 ffmpeg.swr_free(&ctx);
                 _swrContext = null;
+                return false;
             }
             else
             {
@@ -687,14 +1035,34 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
     {
         lock (_lock)
         {
-            if (_formatContext == null) return;
+            ObjectDisposedException.ThrowIf(_isDisposed, this);
+            if (_isClosing || _formatContext == null) return;
+
+            if (_playbackThread is { IsAlive: false })
+            {
+                _playbackThread = null;
+                _cancellationTokenSource?.Dispose();
+                _cancellationTokenSource = null;
+            }
+
+            if (_state == PlaybackState.Ended)
+            {
+                ffmpeg.av_seek_frame(_formatContext, -1, 0, ffmpeg.AVSEEK_FLAG_BACKWARD);
+                if (_videoCodecContext != null)
+                    ffmpeg.avcodec_flush_buffers(_videoCodecContext);
+                if (_audioCodecContext != null)
+                    ffmpeg.avcodec_flush_buffers(_audioCodecContext);
+                _position = 0;
+                _needsResync = true;
+            }
 
             if (_isPaused)
             {
                 _isPaused = false;
                 _audioPlayer?.Resume();
                 _logger.Log("FFmpegMediaPlayer", "Resume", new { Position = _position });
-                Playing?.Invoke(this, EventArgs.Empty);
+                SetState(PlaybackState.Playing);
+                RaiseSynchronized(() => Playing?.Invoke(this, EventArgs.Empty));
                 return;
             }
 
@@ -716,7 +1084,8 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
             };
             _playbackThread.Start(_cancellationTokenSource.Token);
 
-            Playing?.Invoke(this, EventArgs.Empty);
+            SetState(PlaybackState.Playing);
+            RaiseSynchronized(() => Playing?.Invoke(this, EventArgs.Empty));
         }
     }
 
@@ -731,7 +1100,8 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
             _isPaused = true;
             _audioPlayer?.Pause();
             _logger.Log("FFmpegMediaPlayer", "Pause", new { Position = _position });
-            Paused?.Invoke(this, EventArgs.Empty);
+            SetState(PlaybackState.Paused);
+            RaiseSynchronized(() => Paused?.Invoke(this, EventArgs.Empty));
         }
     }
 
@@ -798,17 +1168,50 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
     /// </summary>
     public void Stop()
     {
+        // QueueSamples can be applying bounded backpressure while holding the native
+        // decode lock. Cancel first so it can leave that wait before Stop takes _lock.
+        try
+        {
+            Volatile.Read(ref _cancellationTokenSource)?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // A concurrently completed stop already owns the cancellation source.
+        }
+
+        Thread? playbackThread;
+        CancellationTokenSource? cancellation;
+        bool shouldRaiseStopped;
+
         lock (_lock)
         {
-            if (!_isPlaying && !_isPaused) return;
+            playbackThread = _playbackThread;
+            cancellation = _cancellationTokenSource;
+            shouldRaiseStopped = _isPlaying || _isPaused || playbackThread is not null;
+            if (!shouldRaiseStopped && _formatContext == null)
+                return;
 
             _logger.Log("FFmpegMediaPlayer", "Stop", new { Position = _position });
 
-            _cancellationTokenSource?.Cancel();
-            _playbackThread?.Join(1000);
-            _playbackThread = null;
-            _cancellationTokenSource?.Dispose();
-            _cancellationTokenSource = null;
+            Interlocked.Exchange(ref _interruptRequested, 1);
+            cancellation?.Cancel();
+        }
+
+        // The playback loop takes _lock while decoding. Waiting while holding that
+        // lock deadlocks and can lead to native resources being freed under the loop.
+        if (playbackThread is not null
+            && playbackThread != Thread.CurrentThread
+            && !playbackThread.Join(TimeSpan.FromSeconds(5)))
+        {
+            throw new TimeoutException("FFmpeg playback did not stop after its I/O was interrupted.");
+        }
+
+        lock (_lock)
+        {
+            if (ReferenceEquals(_playbackThread, playbackThread))
+                _playbackThread = null;
+            if (ReferenceEquals(_cancellationTokenSource, cancellation))
+                _cancellationTokenSource = null;
 
             _isPlaying = false;
             _isPaused = false;
@@ -831,8 +1234,14 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
 
             // Ensure audio player is properly stopped and state is synchronized
             _audioPlayer?.Stop();
-            Stopped?.Invoke(this, EventArgs.Empty);
         }
+
+        cancellation?.Dispose();
+        EndIo();
+        Interlocked.Exchange(ref _interruptRequested, 0);
+        SetState(PlaybackState.Stopped);
+        if (shouldRaiseStopped)
+            RaiseSynchronized(() => Stopped?.Invoke(this, EventArgs.Empty));
     }
 
     /// <summary>
@@ -841,6 +1250,7 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
     /// <param name="positionPercent">Position as a percentage (0.0 to 1.0).</param>
     public void Seek(float positionPercent)
     {
+        positionPercent = Math.Clamp(positionPercent, 0f, 1f);
         lock (_lock)
         {
             if (_formatContext == null) return;
@@ -853,7 +1263,21 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
             // at or before targetTime. We then set _seekTargetPts so the decode loops
             // drop frames between the keyframe and targetSec — that's what makes seeks
             // land on the user's position instead of snapping to keyframe boundaries.
-            ffmpeg.av_seek_frame(_formatContext, -1, targetTime, ffmpeg.AVSEEK_FLAG_BACKWARD);
+            var seekResult = ffmpeg.av_seek_frame(
+                _formatContext,
+                -1,
+                targetTime,
+                ffmpeg.AVSEEK_FLAG_BACKWARD);
+            if (seekResult < 0)
+            {
+                var error = new MediaError(
+                    MediaErrorCode.PlaybackFailed,
+                    $"FFmpeg could not seek: {GetFFmpegError(seekResult)}",
+                    seekResult);
+                _lastError = error;
+                RaiseMediaFailed(error);
+                return;
+            }
 
             if (_videoCodecContext != null)
                 ffmpeg.avcodec_flush_buffers(_videoCodecContext);
@@ -883,6 +1307,20 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
                 TargetTime = targetSec
             });
         }
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken = default) =>
+        Task.Run(Stop, cancellationToken);
+
+    public Task CloseAsync(CancellationToken cancellationToken = default) =>
+        Task.Run(Close, cancellationToken);
+
+    public Task SeekAsync(TimeSpan position, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var percent = _duration <= 0 ? 0f : (float)(position.TotalSeconds / _duration);
+        Seek(percent);
+        return Task.CompletedTask;
     }
 
 
@@ -1308,97 +1746,157 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
         _logger.Log("FFmpegMediaPlayer", "PlaybackLoopStarted", null);
 
         bool endOfFile = false;
+        bool reachedNaturalEnd = false;
+        MediaError? playbackError = null;
 
-        while (!token.IsCancellationRequested && !endOfFile)
+        try
         {
-            if (_isPaused)
+            while (!token.IsCancellationRequested && !endOfFile)
             {
-                if (_pauseStartTime == 0)
+                if (_isPaused)
                 {
-                    _pauseStartTime = stopwatch.Elapsed.TotalSeconds;
-                }
-                Thread.Sleep(10);
-                continue;
-            }
-            else
-            {
-                // Resume from pause - accumulate pause time
-                if (_pauseStartTime > 0)
-                {
-                    _totalPauseTime += stopwatch.Elapsed.TotalSeconds - _pauseStartTime;
-                    _pauseStartTime = 0;
-                }
-            }
-
-            // Process packets
-            int packetsThisIteration = 0;
-            const int maxPacketsPerIteration = 15;
-            
-            while (packetsThisIteration < maxPacketsPerIteration && !token.IsCancellationRequested && !endOfFile)
-            {
-                int readResult;
-                int streamIndex;
-                
-                lock (_lock)
-                {
-                    if (_formatContext == null || _packet == null) break;
-                    readResult = ffmpeg.av_read_frame(_formatContext, _packet);
-                    streamIndex = _packet->stream_index;
-                }
-
-                if (readResult < 0)
-                {
-                    endOfFile = true;
-                    _logger.Log("FFmpegMediaPlayer", "EndOfFile", new { ReadResult = readResult });
-                    break;
-                }
-
-                try
-                {
-                    if (streamIndex == _audioStreamIndex)
+                    if (_pauseStartTime == 0)
                     {
-                        lock (_lock)
+                        _pauseStartTime = stopwatch.Elapsed.TotalSeconds;
+                    }
+                    Thread.Sleep(10);
+                    continue;
+                }
+                else
+                {
+                    // Resume from pause - accumulate pause time
+                    if (_pauseStartTime > 0)
+                    {
+                        _totalPauseTime += stopwatch.Elapsed.TotalSeconds - _pauseStartTime;
+                        _pauseStartTime = 0;
+                    }
+                }
+
+                // Process packets
+                int packetsThisIteration = 0;
+                const int maxPacketsPerIteration = 15;
+
+                while (packetsThisIteration < maxPacketsPerIteration && !token.IsCancellationRequested && !endOfFile)
+                {
+                    int readResult;
+                    int streamIndex;
+
+                    lock (_lock)
+                    {
+                        if (_formatContext == null || _packet == null)
                         {
-                            if (_audioCodecContext != null)
+                            endOfFile = true;
+                            break;
+                        }
+                        BeginIo(token, _readTimeout);
+                        try
+                        {
+                            readResult = ffmpeg.av_read_frame(_formatContext, _packet);
+                        }
+                        finally
+                        {
+                            EndIo();
+                        }
+                        streamIndex = _packet->stream_index;
+                    }
+
+                    if (readResult < 0)
+                    {
+                        endOfFile = true;
+                        if (readResult == ffmpeg.AVERROR_EOF)
+                        {
+                            reachedNaturalEnd = true;
+                            _logger.Log("FFmpegMediaPlayer", "EndOfFile", new { ReadResult = readResult });
+                        }
+                        else if (!token.IsCancellationRequested
+                                 && Volatile.Read(ref _interruptRequested) == 0)
+                        {
+                            playbackError = Volatile.Read(ref _ioTimedOut) != 0
+                                ? new MediaError(
+                                    MediaErrorCode.Timeout,
+                                    "Media input stopped responding during playback.",
+                                    readResult)
+                                : new MediaError(
+                                    MediaErrorCode.PlaybackFailed,
+                                    $"FFmpeg playback failed: {GetFFmpegError(readResult)}",
+                                    readResult);
+                        }
+                        break;
+                    }
+
+                    try
+                    {
+                        if (streamIndex == _audioStreamIndex)
+                        {
+                            lock (_lock)
                             {
-                                ProcessAudioPacket(stopwatch, firstFramePts, ref lastAudioPts);
-                                audioPacketsProcessed++;
+                                if (_audioCodecContext != null)
+                                {
+                                    ProcessAudioPacket(
+                                        stopwatch,
+                                        firstFramePts,
+                                        ref lastAudioPts,
+                                        token,
+                                        _packet);
+                                    audioPacketsProcessed++;
+                                }
+                            }
+                        }
+                        else if (streamIndex == _videoStreamIndex)
+                        {
+                            // ProcessVideoPacket manages its own locking:
+                            // holds lock for decode/convert, releases for UI callbacks
+                            if (_videoCodecContext != null)
+                            {
+                                ProcessVideoPacket(stopwatch, ref firstFramePts, ref lastVideoPts);
+                                videoPacketsProcessed++;
                             }
                         }
                     }
-                    else if (streamIndex == _videoStreamIndex)
+                    finally
                     {
-                        // ProcessVideoPacket manages its own locking:
-                        // holds lock for decode/convert, releases for UI callbacks
-                        if (_videoCodecContext != null)
+                        lock (_lock)
                         {
-                            ProcessVideoPacket(stopwatch, ref firstFramePts, ref lastVideoPts);
-                            videoPacketsProcessed++;
+                            if (_packet != null)
+                                ffmpeg.av_packet_unref(_packet);
                         }
                     }
+
+                    packetsThisIteration++;
                 }
-                finally
+
+                // Minimal sleep only if we processed packets, to prevent CPU spinning
+                if (packetsThisIteration > 0 && !endOfFile)
                 {
-                    lock (_lock)
-                    {
-                        if (_packet != null)
-                            ffmpeg.av_packet_unref(_packet);
-                    }
+                    UpdateAudioOnlyPositionFromPlaybackClock(stopwatch);
+                    Thread.Sleep(1);
                 }
-                
-                packetsThisIteration++;
             }
-            
-            // Minimal sleep only if we processed packets, to prevent CPU spinning
-            if (packetsThisIteration > 0 && !endOfFile)
+
+            if (reachedNaturalEnd && _audioPlayer is not null)
             {
-                UpdateAudioOnlyPositionFromPlaybackClock(stopwatch);
-                Thread.Sleep(1);
+                lock (_lock)
+                {
+                    FlushAudioPipeline(stopwatch, firstFramePts, ref lastAudioPts, token);
+                    _audioPlayer?.CompleteInput();
+                }
+
+                WaitForAudioPlaybackToDrain(token, stopwatch);
             }
         }
-
-        // Reset state inside lock
-        WaitForAudioOnlyPlaybackToFinish(token, stopwatch);
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            reachedNaturalEnd = false;
+        }
+        catch (Exception ex)
+        {
+            reachedNaturalEnd = false;
+            playbackError = new MediaError(
+                MediaErrorCode.PlaybackFailed,
+                "An unexpected error stopped media playback.",
+                Exception: ex);
+            _logger.Log("FFmpegMediaPlayer", "PlaybackLoopFailed", new { Error = ex.Message });
+        }
 
         // Reset state inside lock
         lock (_lock)
@@ -1411,43 +1909,52 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
             _isPlaying = false;
             _isPaused = false;
 
-            // Seek back to start so Play() can restart from the beginning
-            if (_formatContext != null)
-            {
-                ffmpeg.av_seek_frame(_formatContext, -1, 0, ffmpeg.AVSEEK_FLAG_BACKWARD);
-                if (_videoCodecContext != null)
-                    ffmpeg.avcodec_flush_buffers(_videoCodecContext);
-                if (_audioCodecContext != null)
-                    ffmpeg.avcodec_flush_buffers(_audioCodecContext);
-            }
-
-            _position = 0;
+            if (reachedNaturalEnd)
+                _position = _duration;
             _needsResync = true;
             _lastFramePts = -1;
             _seekTargetPts = -1;
 
-            _audioPlayer?.Stop();
+            try
+            {
+                _audioPlayer?.Stop();
+            }
+            catch (Exception ex)
+            {
+                playbackError ??= new MediaError(
+                    MediaErrorCode.AudioOutputUnavailable,
+                    "The audio output failed while playback was stopping.",
+                    Exception: ex);
+            }
         }
 
-        // Fire EndReached OUTSIDE lock to prevent deadlock with UI thread
-        if (_synchronizationCallback != null)
-            _synchronizationCallback(() => EndReached?.Invoke(this, EventArgs.Empty));
-        else
-            EndReached?.Invoke(this, EventArgs.Empty);
+        if (playbackError is not null)
+        {
+            _lastError = playbackError;
+            SetState(PlaybackState.Failed);
+            RaiseMediaFailed(playbackError);
+        }
+        else if (reachedNaturalEnd && !token.IsCancellationRequested)
+        {
+            SetState(PlaybackState.Ended);
+            RaiseSynchronized(() => EndReached?.Invoke(this, EventArgs.Empty));
+        }
     }
 
-    private void WaitForAudioOnlyPlaybackToFinish(CancellationToken token, Stopwatch stopwatch)
+    private void WaitForAudioPlaybackToDrain(CancellationToken token, Stopwatch stopwatch)
     {
-        if (_videoStreamIndex >= 0 || _audioPlayer == null || _duration <= 0)
+        var audioPlayer = _audioPlayer;
+        if (audioPlayer == null)
             return;
 
-        _logger.Log("FFmpegMediaPlayer", "AudioOnlyDrainStarted", new
+        _logger.Log("FFmpegMediaPlayer", "AudioDrainStarted", new
         {
             Duration = _duration,
-            AudioStartPts = _audioStartPts
+            AudioStartPts = _audioStartPts,
+            HasVideo = _videoStreamIndex >= 0
         });
 
-        while (!token.IsCancellationRequested)
+        while (!token.IsCancellationRequested && !audioPlayer.IsDrained)
         {
             if (_isPaused)
             {
@@ -1466,27 +1973,28 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
 
             var playedPosition = UpdateAudioOnlyPositionFromPlaybackClock(stopwatch);
 
-            if (playedPosition >= _duration - 0.05)
-                break;
+            if (_videoStreamIndex < 0)
+                UpdateAudioOnlyPositionFromPlaybackClock(stopwatch);
 
-            Thread.Sleep(50);
+            Thread.Sleep(10);
         }
 
-        _logger.Log("FFmpegMediaPlayer", "AudioOnlyDrainCompleted", new
+        _logger.Log("FFmpegMediaPlayer", "AudioDrainCompleted", new
         {
             Position = _position,
-            ElapsedWallTime = stopwatch.Elapsed.TotalSeconds - _playbackStartWallTime - _totalPauseTime
+            IsDrained = audioPlayer.IsDrained
         });
     }
 
     private double UpdateAudioOnlyPositionFromPlaybackClock(Stopwatch stopwatch)
     {
-        if (_videoStreamIndex >= 0 || _duration <= 0 || _playbackStartWallTime <= 0)
+        if (_videoStreamIndex >= 0 || _audioPlayer == null)
             return _position;
 
-        var elapsedWall = stopwatch.Elapsed.TotalSeconds - _playbackStartWallTime - _totalPauseTime;
-        var playedPosition = _startTime + Math.Max(0, elapsedWall);
-        _position = Math.Clamp(playedPosition, 0, _duration);
+        var playedPosition = _audioStartPts + Math.Max(0, _audioPlayer.GetPlaybackTime());
+        _position = _duration > 0
+            ? Math.Clamp(playedPosition, 0, _duration)
+            : Math.Max(0, playedPosition);
         var positionSnapshot = Position;
 
         if (_synchronizationCallback != null)
@@ -1664,7 +2172,12 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
     }
 
 
-    private void ProcessAudioPacket(Stopwatch stopwatch, double firstFramePts, ref double lastAudioPts)
+    private void ProcessAudioPacket(
+        Stopwatch stopwatch,
+        double firstFramePts,
+        ref double lastAudioPts,
+        CancellationToken cancellationToken,
+        AVPacket* packet)
     {
         if (_audioPlayer == null)
         {
@@ -1672,7 +2185,7 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
             _logger.Log("FFmpegMediaPlayer", "ProcessAudioPacketFailed", new { Reason = "AudioPlayer is null" });
             return;
         }
-        if (ffmpeg.avcodec_send_packet(_audioCodecContext, _packet) < 0)
+        if (ffmpeg.avcodec_send_packet(_audioCodecContext, packet) < 0)
         {
             Debug.WriteLine("[FFmpegMediaPlayer] ProcessAudioPacket: avcodec_send_packet failed");
             _logger.Log("FFmpegMediaPlayer", "ProcessAudioPacketFailed", new { Reason = "avcodec_send_packet failed" });
@@ -1686,6 +2199,7 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
         {
             while (ffmpeg.avcodec_receive_frame(_audioCodecContext, tempFrame) >= 0)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var samples = tempFrame->nb_samples;
                 var channels = _audioCodecContext->ch_layout.nb_channels;
                 var sampleRate = _audioCodecContext->sample_rate;
@@ -1761,7 +2275,10 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
                             // Queue the S16 samples directly
                             // convertedSamples is per-channel, so for stereo we have convertedSamples * 2 total samples
                             // QueueSamplesS16 expects total sample count (stereo interleaved: L, R, L, R, ...)
-                            _audioPlayer.QueueSamplesS16(outPtr, convertedSamples * 2);
+                            _audioPlayer.QueueSamplesS16(
+                                outPtr,
+                                convertedSamples * 2,
+                                cancellationToken);
                             _logger.Log("FFmpegMediaPlayer", "AudioQueued", new 
                             { 
                                 InputSamples = samples,
@@ -1775,18 +2292,15 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
                 }
                 else
                 {
-                    // Fallback to manual conversion
-                    var floatBuffer = new float[samples * 2]; // Output stereo
-                    var format2 = (AVSampleFormat)tempFrame->format;
-                    ConvertAudioSamples(tempFrame, floatBuffer, samples, channels, format2);
-                    _audioPlayer.QueueSamples(floatBuffer);
-                    _logger.Log("FFmpegMediaPlayer", "AudioQueued", new 
-                    { 
+                    // A configured resampler is required for safe stereo output. The old
+                    // manual fallback wrote input channel counts into a stereo buffer.
+                    _logger.Log("FFmpegMediaPlayer", "AudioFrameDropped", new
+                    {
+                        Reason = "Resampler unavailable",
                         Samples = samples,
-                        Channels = channels,
-                        AudioTime = pts != ffmpeg.AV_NOPTS_VALUE ? pts * _audioTimeBase.num / (double)_audioTimeBase.den : 0,
-                        Format = format2.ToString()
+                        Channels = channels
                     });
+                    return;
                 }
             }
         }
@@ -1930,10 +2444,103 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
     /// </summary>
     public void Close()
     {
-        Stop();
-        lock (_lock)
+        if (_isDisposed)
+            return;
+
+        CancelPendingOpen();
+        _openGate.Wait();
+        Interlocked.Exchange(ref _openGateHeld, 1);
+        MediaSourceSession? session = null;
+        try
         {
-            CloseInternal();
+            if (_isDisposed)
+                return;
+
+            session = CloseWhileOpenGateHeld();
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _openGateHeld, 0);
+            _openGate.Release();
+        }
+
+        session?.Dispose();
+        SetState(PlaybackState.Closed);
+    }
+
+    private MediaSourceSession? CloseWhileOpenGateHeld()
+    {
+        lock (_lock)
+            _isClosing = true;
+
+        try
+        {
+            Stop();
+            lock (_lock)
+            {
+                CloseInternal();
+                var session = _mediaSession;
+                _mediaSession = null;
+                _mediaInfo = null;
+                _mediaSource = null;
+                return session;
+            }
+        }
+        finally
+        {
+            lock (_lock)
+                _isClosing = false;
+        }
+    }
+
+    private void FlushAudioPipeline(
+        Stopwatch stopwatch,
+        double firstFramePts,
+        ref double lastAudioPts,
+        CancellationToken cancellationToken)
+    {
+        if (_audioPlayer == null || _audioCodecContext == null)
+            return;
+
+        // A null packet tells FFmpeg to emit delayed codec frames.
+        ProcessAudioPacket(
+            stopwatch,
+            firstFramePts,
+            ref lastAudioPts,
+            cancellationToken,
+            null);
+
+        if (_swrContext == null)
+            return;
+
+        var sampleRate = _audioCodecContext->sample_rate;
+        var outputPlanes = stackalloc byte*[1];
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var delayedSamples = ffmpeg.swr_get_delay(_swrContext, sampleRate);
+            if (delayedSamples <= 0)
+                break;
+
+            var outputCapacity = checked((int)Math.Min(delayedSamples, int.MaxValue / 2));
+            var output = new short[outputCapacity * 2];
+            fixed (short* outputPointer = output)
+            {
+                outputPlanes[0] = (byte*)outputPointer;
+                var convertedSamples = ffmpeg.swr_convert(
+                    _swrContext,
+                    outputPlanes,
+                    outputCapacity,
+                    null,
+                    0);
+                if (convertedSamples <= 0)
+                    break;
+
+                _audioPlayer.QueueSamplesS16(
+                    outputPointer,
+                    convertedSamples * 2,
+                    cancellationToken);
+            }
         }
     }
 
@@ -1942,12 +2549,73 @@ public sealed unsafe class FFmpegMediaPlayer : IDisposable
     /// </summary>
     public void Dispose()
     {
-        if (_isDisposed) return;
-        _isDisposed = true;
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+            return;
 
+        _isDisposed = true;
         _logger.Log("FFmpegMediaPlayer", "Dispose", null);
-        Close();
-        _logger.Dispose();
+        CancelPendingOpen();
+
+        // A source provider is user-extensible and may not observe cancellation.
+        // Keep synchronous UI teardown bounded; final cleanup continues as soon as
+        // the in-flight open releases the serialization gate.
+        if (_openGate.Wait(TimeSpan.FromMilliseconds(100)))
+            CompleteDisposeWithOpenGateHeld();
+        else
+            _ = Task.Run(CompleteDisposeWhenOpenGateAvailable);
+    }
+
+    /// <summary>
+    /// Disposes the player and asynchronously waits until an in-flight source open
+    /// has released its resources.
+    /// </summary>
+    public ValueTask DisposeAsync()
+    {
+        Dispose();
+        return new ValueTask(_disposeCompletion.Task);
+    }
+
+    private void CompleteDisposeWhenOpenGateAvailable()
+    {
+        try
+        {
+            _openGate.Wait();
+            CompleteDisposeWithOpenGateHeld();
+        }
+        catch (Exception ex)
+        {
+            _disposeCompletion.TrySetException(ex);
+        }
+    }
+
+    private void CompleteDisposeWithOpenGateHeld()
+    {
+        Interlocked.Exchange(ref _openGateHeld, 1);
+        MediaSourceSession? session = null;
+        try
+        {
+            session = CloseWhileOpenGateHeld();
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _openGateHeld, 0);
+            _openGate.Release();
+        }
+
+        try
+        {
+            session?.Dispose();
+            SetState(PlaybackState.Disposed);
+            if (_interruptHandle.IsAllocated)
+                _interruptHandle.Free();
+            _logger.Dispose();
+            Volatile.Write(ref _disposeState, 2);
+            _disposeCompletion.TrySetResult();
+        }
+        catch (Exception ex)
+        {
+            _disposeCompletion.TrySetException(ex);
+        }
     }
 }
 

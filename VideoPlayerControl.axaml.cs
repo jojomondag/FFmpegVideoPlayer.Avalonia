@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -54,6 +56,9 @@ public partial class VideoPlayerControl : UserControl
     private IVideoRenderer? _videoRenderer;
     private string? _currentMediaPath;
     private bool _hasMediaLoaded;
+    private CancellationTokenSource? _sourceOpenCancellation;
+    private long _openGeneration;
+    private MediaSource? _requestedSource;
 
     /// <summary>
     /// Defines the Volume property.
@@ -85,23 +90,27 @@ public partial class VideoPlayerControl : UserControl
     public static readonly StyledProperty<string?> SourceProperty =
         AvaloniaProperty.Register<VideoPlayerControl, string?>(nameof(Source), null);
 
+    /// <summary>Defines the typed Media property.</summary>
+    public static readonly StyledProperty<MediaSource?> MediaProperty =
+        AvaloniaProperty.Register<VideoPlayerControl, MediaSource?>(nameof(Media), null);
+
     /// <summary>
     /// Defines the ControlPanelBackground property.
     /// </summary>
-    public static readonly StyledProperty<Media.IBrush?> ControlPanelBackgroundProperty =
-        AvaloniaProperty.Register<VideoPlayerControl, Media.IBrush?>(nameof(ControlPanelBackground), null);
+    public static readonly StyledProperty<global::Avalonia.Media.IBrush?> ControlPanelBackgroundProperty =
+        AvaloniaProperty.Register<VideoPlayerControl, global::Avalonia.Media.IBrush?>(nameof(ControlPanelBackground), null);
 
     /// <summary>
     /// Defines the VideoBackground property.
     /// </summary>
-    public static readonly StyledProperty<Media.IBrush?> VideoBackgroundProperty =
-        AvaloniaProperty.Register<VideoPlayerControl, Media.IBrush?>(nameof(VideoBackground), null);
+    public static readonly StyledProperty<global::Avalonia.Media.IBrush?> VideoBackgroundProperty =
+        AvaloniaProperty.Register<VideoPlayerControl, global::Avalonia.Media.IBrush?>(nameof(VideoBackground), null);
 
     /// <summary>
     /// Defines the VideoStretch property.
     /// </summary>
-    public static readonly StyledProperty<Media.Stretch> VideoStretchProperty =
-        AvaloniaProperty.Register<VideoPlayerControl, Media.Stretch>(nameof(VideoStretch), Media.Stretch.Uniform);
+    public static readonly StyledProperty<global::Avalonia.Media.Stretch> VideoStretchProperty =
+        AvaloniaProperty.Register<VideoPlayerControl, global::Avalonia.Media.Stretch>(nameof(VideoStretch), global::Avalonia.Media.Stretch.Uniform);
 
     /// <summary>
     /// Defines the EnableKeyboardShortcuts property.
@@ -174,10 +183,20 @@ public partial class VideoPlayerControl : UserControl
     }
 
     /// <summary>
+    /// Gets or sets a reusable typed media source. This takes precedence over
+    /// <see cref="Source"/> and supports custom headers, streams and manifests.
+    /// </summary>
+    public MediaSource? Media
+    {
+        get => GetValue(MediaProperty);
+        set => SetValue(MediaProperty, value);
+    }
+
+    /// <summary>
     /// Gets or sets the background brush for the control panel.
     /// Default is White. Set to any brush to customize the appearance.
     /// </summary>
-    public Media.IBrush? ControlPanelBackground
+    public global::Avalonia.Media.IBrush? ControlPanelBackground
     {
         get => GetValue(ControlPanelBackgroundProperty);
         set => SetValue(ControlPanelBackgroundProperty, value);
@@ -189,7 +208,7 @@ public partial class VideoPlayerControl : UserControl
     /// When null or Transparent, the background will be transparent, allowing the parent control's background to show through.
     /// This is especially useful when playing videos with transparency or when no video is loaded.
     /// </summary>
-    public Media.IBrush? VideoBackground
+    public global::Avalonia.Media.IBrush? VideoBackground
     {
         get => GetValue(VideoBackgroundProperty);
         set => SetValue(VideoBackgroundProperty, value);
@@ -199,7 +218,7 @@ public partial class VideoPlayerControl : UserControl
     /// Gets or sets the stretch mode for the video.
     /// Default is Uniform. Options: None, Fill, Uniform, UniformToFill.
     /// </summary>
-    public Media.Stretch VideoStretch
+    public global::Avalonia.Media.Stretch VideoStretch
     {
         get => GetValue(VideoStretchProperty);
         set => SetValue(VideoStretchProperty, value);
@@ -290,12 +309,12 @@ public partial class VideoPlayerControl : UserControl
         AvaloniaProperty.Register<VideoPlayerControl, CornerRadius>(nameof(ButtonCornerRadius), new CornerRadius(3));
 
     /// <summary>Defines the ControlForeground property.</summary>
-    public static readonly StyledProperty<Media.IBrush?> ControlForegroundProperty =
-        AvaloniaProperty.Register<VideoPlayerControl, Media.IBrush?>(nameof(ControlForeground), null);
+    public static readonly StyledProperty<global::Avalonia.Media.IBrush?> ControlForegroundProperty =
+        AvaloniaProperty.Register<VideoPlayerControl, global::Avalonia.Media.IBrush?>(nameof(ControlForeground), null);
 
     /// <summary>Defines the ButtonBackground property.</summary>
-    public static readonly StyledProperty<Media.IBrush?> ButtonBackgroundProperty =
-        AvaloniaProperty.Register<VideoPlayerControl, Media.IBrush?>(nameof(ButtonBackground), null);
+    public static readonly StyledProperty<global::Avalonia.Media.IBrush?> ButtonBackgroundProperty =
+        AvaloniaProperty.Register<VideoPlayerControl, global::Avalonia.Media.IBrush?>(nameof(ButtonBackground), null);
 
     /// <summary>
     /// Gets or sets the size of playback control icons. Default is 14.
@@ -346,7 +365,7 @@ public partial class VideoPlayerControl : UserControl
     /// Gets or sets the foreground brush for control text and icons.
     /// If null, defaults to #333333.
     /// </summary>
-    public Media.IBrush? ControlForeground
+    public global::Avalonia.Media.IBrush? ControlForeground
     {
         get => GetValue(ControlForegroundProperty);
         set => SetValue(ControlForegroundProperty, value);
@@ -356,7 +375,7 @@ public partial class VideoPlayerControl : UserControl
     /// Gets or sets the background brush for playback buttons.
     /// If null, defaults to #e8e8e8.
     /// </summary>
-    public Media.IBrush? ButtonBackground
+    public global::Avalonia.Media.IBrush? ButtonBackground
     {
         get => GetValue(ButtonBackgroundProperty);
         set => SetValue(ButtonBackgroundProperty, value);
@@ -371,6 +390,12 @@ public partial class VideoPlayerControl : UserControl
     /// Gets whether the control currently has a media resource loaded.
     /// </summary>
     public bool HasMediaLoaded => _hasMediaLoaded;
+
+    /// <summary>Gets the current standalone player lifecycle state.</summary>
+    public PlaybackState PlaybackState => _mediaPlayer?.State ?? PlaybackState.Closed;
+
+    /// <summary>Gets the latest structured media error.</summary>
+    public MediaError? LastError => _mediaPlayer?.LastError;
 
     /// <summary>
     /// Gets whether a video is currently playing.
@@ -429,6 +454,15 @@ public partial class VideoPlayerControl : UserControl
     /// Occurs when media is successfully opened.
     /// </summary>
     public event EventHandler<MediaOpenedEventArgs>? MediaOpened;
+
+    /// <summary>Occurs immediately before source resolution starts.</summary>
+    public event EventHandler<MediaOpeningEventArgs>? MediaOpening;
+
+    /// <summary>Occurs when source resolution, opening, or playback fails.</summary>
+    public event EventHandler<MediaFailedEventArgs>? MediaFailed;
+
+    /// <summary>Occurs whenever the standalone player lifecycle state changes.</summary>
+    public event EventHandler<PlaybackStateChangedEventArgs>? PlaybackStateChanged;
 
     /// <summary>
     /// Occurs when playback is paused.
@@ -562,14 +596,17 @@ public partial class VideoPlayerControl : UserControl
         if (e.Property == SourceProperty)
         {
             var newSource = e.NewValue as string;
-            if (!string.IsNullOrEmpty(newSource) && _isInitialized)
-            {
-                Open(newSource);
-                if (AutoPlay)
-                {
-                    Play();
-                }
-            }
+            if (Media is null && !string.IsNullOrWhiteSpace(newSource) && _isInitialized)
+                _ = OpenFromPropertyAsync(MediaSource.FromLocation(newSource));
+            else if (Media is null && string.IsNullOrWhiteSpace(newSource))
+                _ = CloseAsync();
+        }
+        else if (e.Property == MediaProperty)
+        {
+            if (e.NewValue is MediaSource mediaSource && _isInitialized)
+                _ = OpenFromPropertyAsync(mediaSource);
+            else if (e.NewValue is null && string.IsNullOrWhiteSpace(Source))
+                _ = CloseAsync();
         }
         else if (e.Property == ShowOpenButtonProperty)
         {
@@ -580,7 +617,7 @@ public partial class VideoPlayerControl : UserControl
         }
         else if (e.Property == ControlPanelBackgroundProperty)
         {
-            if (_controlPanelBorder != null && e.NewValue is Media.IBrush brush)
+            if (_controlPanelBorder != null && e.NewValue is global::Avalonia.Media.IBrush brush)
             {
                 _controlPanelBorder.Background = brush;
             }
@@ -589,13 +626,13 @@ public partial class VideoPlayerControl : UserControl
         {
             if (_videoBorder != null)
             {
-                _videoBorder.Background = e.NewValue as Media.IBrush; // Can be null for transparency
+                _videoBorder.Background = e.NewValue as global::Avalonia.Media.IBrush; // Can be null for transparency
             }
         }
         else if (e.Property == VideoStretchProperty)
         {
             // Apply to renderer
-            if (e.NewValue is Media.Stretch rendererStretch)
+            if (e.NewValue is global::Avalonia.Media.Stretch rendererStretch)
             {
                 if (_videoRenderer is CpuVideoRenderer cpuRenderer)
                 {
@@ -629,15 +666,15 @@ public partial class VideoPlayerControl : UserControl
         }
         else if (e.Property == ControlForegroundProperty)
         {
-            ApplyControlForeground(e.NewValue as Media.IBrush);
+            ApplyControlForeground(e.NewValue as global::Avalonia.Media.IBrush);
         }
         else if (e.Property == ButtonBackgroundProperty)
         {
-            ApplyButtonBackground(e.NewValue as Media.IBrush);
+            ApplyButtonBackground(e.NewValue as global::Avalonia.Media.IBrush);
         }
     }
 
-    private void ApplyControlForeground(Media.IBrush? brush)
+    private void ApplyControlForeground(global::Avalonia.Media.IBrush? brush)
     {
         if (brush == null) return;
         // Apply to all icon Path elements
@@ -656,7 +693,7 @@ public partial class VideoPlayerControl : UserControl
         if (_totalTimeText != null) _totalTimeText.Foreground = brush;
     }
 
-    private void ApplyButtonBackground(Media.IBrush? brush)
+    private void ApplyButtonBackground(global::Avalonia.Media.IBrush? brush)
     {
         if (brush == null) return;
         var buttons = new[] {
@@ -710,6 +747,8 @@ public partial class VideoPlayerControl : UserControl
             _mediaPlayer.Stopped += OnStopped;
             _mediaPlayer.EndReached += OnEndReached;
             _mediaPlayer.FrameReady += OnFrameReady;
+            _mediaPlayer.MediaFailed += OnCoreMediaFailed;
+            _mediaPlayer.StateChanged += OnCoreStateChanged;
 
             _isInitialized = true;
             
@@ -749,14 +788,19 @@ public partial class VideoPlayerControl : UserControl
             }
             
             // Load source if set (Open() handles AutoPlay internally)
-            if (!string.IsNullOrEmpty(Source))
-            {
-                Open(Source);
-            }
+            var initialMedia = Media ?? (!string.IsNullOrWhiteSpace(Source)
+                ? MediaSource.FromLocation(Source)
+                : null);
+            if (initialMedia is not null)
+                _ = OpenFromPropertyAsync(initialMedia);
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"[VideoPlayerControl] Failed to initialize FFmpeg: {ex.Message}");
+            MediaFailed?.Invoke(this, new MediaFailedEventArgs(new MediaError(
+                MediaErrorCode.NativeLibraryUnavailable,
+                "FFmpeg or its audio output could not be initialized.",
+                Exception: ex)));
         }
     }
 
@@ -854,43 +898,123 @@ public partial class VideoPlayerControl : UserControl
         }
     }
 
-    /// <summary>
-    /// Opens and optionally plays a media file.
-    /// </summary>
-    /// <param name="path">The path to the media file.</param>
-    public void Open(string path)
+    /// <summary>Opens a local path, direct URI, or supported provider URL.</summary>
+    /// <remarks>
+    /// This compatibility method is synchronous. Bind <see cref="Source"/> or use
+    /// <see cref="OpenAsync(MediaSource, MediaOpenOptions?, CancellationToken)"/>
+    /// to keep the UI responsive for network sources.
+    /// </remarks>
+    public void Open(string path) => Open(MediaSource.FromLocation(path));
+
+    /// <summary>Synchronously opens a typed source.</summary>
+    public MediaOpenResult Open(MediaSource source, MediaOpenOptions? options = null)
     {
-        Debug.WriteLine($"[VideoPlayerControl] Open called with path: {path}");
-        
-        if (_mediaPlayer == null)
-        {
-            Debug.WriteLine("[VideoPlayerControl] FFmpeg not initialized - _mediaPlayer is null");
-            return;
-        }
+        ArgumentNullException.ThrowIfNull(source);
+        EnsurePlayerInitialized();
+        if (_mediaPlayer is null)
+            return CreateInitializationFailure();
+
+        CancelControlOpen();
+        Volatile.Write(ref _requestedSource, source);
+        _hasMediaLoaded = false;
+        MediaOpening?.Invoke(this, new MediaOpeningEventArgs(source));
+        var result = _mediaPlayer.Open(source, options);
+        if (result.Succeeded && result.MediaInfo is not null)
+            CompleteMediaOpen(source, result.MediaInfo);
+        return result;
+    }
+
+    /// <summary>Asynchronously resolves, opens and optionally plays a typed source.</summary>
+    public async Task<MediaOpenResult> OpenAsync(
+        MediaSource source,
+        MediaOpenOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        EnsurePlayerInitialized();
+        if (_mediaPlayer is null)
+            return CreateInitializationFailure();
+
+        var generation = Interlocked.Increment(ref _openGeneration);
+        Volatile.Write(ref _requestedSource, source);
+        var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var previousCancellation = Interlocked.Exchange(ref _sourceOpenCancellation, operationCancellation);
+        TryCancel(previousCancellation);
 
         _hasMediaLoaded = false;
-        Debug.WriteLine("[VideoPlayerControl] Calling _mediaPlayer.Open...");
-
-        var opened = _mediaPlayer.Open(path);
-        Debug.WriteLine($"[VideoPlayerControl] _mediaPlayer.Open returned: {opened}");
-        
-        if (!opened)
+        MediaOpening?.Invoke(this, new MediaOpeningEventArgs(source));
+        try
         {
-            Debug.WriteLine($"[VideoPlayerControl] Failed to open media: {path}");
-            return;
+            var result = await _mediaPlayer
+                .OpenAsync(source, options, operationCancellation.Token)
+                .ConfigureAwait(false);
+
+            if (generation == Volatile.Read(ref _openGeneration)
+                && result.Succeeded
+                && result.MediaInfo is not null)
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (generation == Volatile.Read(ref _openGeneration) &&
+                        ReferenceEquals(source, Volatile.Read(ref _requestedSource)))
+                    {
+                        CompleteMediaOpen(source, result.MediaInfo);
+                    }
+                });
+            }
+
+            return result;
         }
+        finally
+        {
+            Interlocked.CompareExchange(ref _sourceOpenCancellation, null, operationCancellation);
+            operationCancellation.Dispose();
+        }
+    }
 
-        _currentMediaPath = path;
+    /// <summary>Asynchronously opens a local path, URI, or supported provider URL.</summary>
+    public Task<MediaOpenResult> OpenAsync(
+        string source,
+        MediaOpenOptions? options = null,
+        CancellationToken cancellationToken = default) =>
+        OpenAsync(MediaSource.FromLocation(source), options, cancellationToken);
+
+    private async Task OpenFromPropertyAsync(MediaSource source)
+    {
+        try
+        {
+            await OpenAsync(source).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Source replacement and visual-tree detach are expected cancellation paths.
+        }
+        catch (Exception ex)
+        {
+            var error = new MediaError(
+                MediaErrorCode.PlaybackFailed,
+                $"Could not open '{source.DisplayName}'.",
+                Exception: ex);
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (ReferenceEquals(source, Volatile.Read(ref _requestedSource)))
+                    MediaFailed?.Invoke(this, new MediaFailedEventArgs(error, source));
+            });
+        }
+    }
+
+    private void CompleteMediaOpen(MediaSource source, MediaInfo mediaInfo)
+    {
+        if (_mediaPlayer is null)
+            return;
+
+        _currentMediaPath = source.DisplayName;
         _hasMediaLoaded = true;
-        Debug.WriteLine($"[VideoPlayerControl] Media loaded successfully, raising MediaOpened event");
-        MediaOpened?.Invoke(this, new MediaOpenedEventArgs(path));
+        MediaOpened?.Invoke(this, new MediaOpenedEventArgs(source, mediaInfo));
 
-        if (_mediaPlayer.HasVideo)
+        if (mediaInfo.HasVideo)
         {
             SetupVideoRenderer();
-
-            // Decode and display first frame as thumbnail/preview.
-            // This ensures the video has correct dimensions before playback starts.
             _mediaPlayer.DecodeFirstFrame();
         }
         else
@@ -899,9 +1023,22 @@ public partial class VideoPlayerControl : UserControl
         }
 
         if (AutoPlay)
-        {
             _mediaPlayer.Play();
-        }
+    }
+
+    private void EnsurePlayerInitialized()
+    {
+        if (!_isInitialized)
+            InitializePlayer();
+    }
+
+    private MediaOpenResult CreateInitializationFailure()
+    {
+        var error = new MediaError(
+            MediaErrorCode.NativeLibraryUnavailable,
+            "The FFmpeg media player is not initialized.");
+        MediaFailed?.Invoke(this, new MediaFailedEventArgs(error));
+        return MediaOpenResult.Failure(error);
     }
 
     /// <summary>
@@ -910,14 +1047,8 @@ public partial class VideoPlayerControl : UserControl
     /// <param name="uri">The URI of the media.</param>
     public void OpenUri(Uri uri)
     {
-        if (uri.IsFile)
-        {
-            Open(uri.LocalPath);
-        }
-        else
-        {
-            Open(uri.ToString());
-        }
+        ArgumentNullException.ThrowIfNull(uri);
+        Open(uri.IsFile ? MediaSource.FromPath(uri.LocalPath) : MediaSource.FromUri(uri));
     }
 
     /// <summary>
@@ -941,11 +1072,61 @@ public partial class VideoPlayerControl : UserControl
     /// </summary>
     public void Stop()
     {
+        CancelControlOpen();
         _mediaPlayer?.Stop();
         if (_seekBar != null) _seekBar.Value = 0;
         if (_currentTimeText != null) _currentTimeText.Text = "00:00";
         // Clear the renderer to show background when stopped
         _videoRenderer?.Clear();
+    }
+
+    /// <summary>Cancels pending resolution and releases the current media session.</summary>
+    public async Task CloseAsync(CancellationToken cancellationToken = default)
+    {
+        CancelControlOpen();
+        var player = _mediaPlayer;
+        if (player is null)
+            return;
+
+        try
+        {
+            await player.CloseAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            _currentMediaPath = null;
+            _hasMediaLoaded = false;
+            if (_seekBar != null) _seekBar.Value = 0;
+            if (_currentTimeText != null) _currentTimeText.Text = "00:00";
+            if (_totalTimeText != null) _totalTimeText.Text = "00:00";
+            _videoRenderer?.Clear();
+        });
+    }
+
+    private void CancelControlOpen()
+    {
+        Interlocked.Increment(ref _openGeneration);
+        Volatile.Write(ref _requestedSource, null);
+        var cancellation = Interlocked.Exchange(ref _sourceOpenCancellation, null);
+        TryCancel(cancellation);
+        _mediaPlayer?.CancelPendingOpen();
+    }
+
+    private static void TryCancel(CancellationTokenSource? cancellation)
+    {
+        try
+        {
+            cancellation?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The owning open completed between the atomic exchange and cancellation.
+        }
     }
 
     /// <summary>
@@ -1005,6 +1186,19 @@ public partial class VideoPlayerControl : UserControl
         UpdatePlayPauseButton(true);
         PlaybackStarted?.Invoke(this, EventArgs.Empty);
     }
+
+    private void OnCoreMediaFailed(object? sender, MediaFailedEventArgs e)
+    {
+        var requestedSource = Volatile.Read(ref _requestedSource);
+        if (e.Source is not null && !ReferenceEquals(e.Source, requestedSource))
+            return;
+
+        _hasMediaLoaded = false;
+        MediaFailed?.Invoke(this, e);
+    }
+
+    private void OnCoreStateChanged(object? sender, PlaybackStateChangedEventArgs e) =>
+        PlaybackStateChanged?.Invoke(this, e);
 
     private void ShowAudioOnlyPlaceholder()
     {
@@ -1264,17 +1458,23 @@ public partial class VideoPlayerControl : UserControl
 
     private void Cleanup()
     {
-        if (_mediaPlayer != null)
+        CancelControlOpen();
+        var mediaPlayer = Interlocked.Exchange(ref _mediaPlayer, null);
+        if (mediaPlayer != null)
         {
-            _mediaPlayer.PositionChanged -= OnPositionChanged;
-            _mediaPlayer.LengthChanged -= OnLengthChanged;
-            _mediaPlayer.Playing -= OnPlaying;
-            _mediaPlayer.Paused -= OnPaused;
-            _mediaPlayer.Stopped -= OnStopped;
-            _mediaPlayer.EndReached -= OnEndReached;
-            _mediaPlayer.FrameReady -= OnFrameReady;
-            _mediaPlayer.Dispose();
-            _mediaPlayer = null;
+            mediaPlayer.PositionChanged -= OnPositionChanged;
+            mediaPlayer.LengthChanged -= OnLengthChanged;
+            mediaPlayer.Playing -= OnPlaying;
+            mediaPlayer.Paused -= OnPaused;
+            mediaPlayer.Stopped -= OnStopped;
+            mediaPlayer.EndReached -= OnEndReached;
+            mediaPlayer.FrameReady -= OnFrameReady;
+            mediaPlayer.MediaFailed -= OnCoreMediaFailed;
+            mediaPlayer.StateChanged -= OnCoreStateChanged;
+
+            // Source providers are extensible and may take time to observe
+            // cancellation. Never block Avalonia's visual-tree detach path.
+            _ = DisposeDetachedPlayerAsync(mediaPlayer);
         }
         
         if (_videoRenderer != null)
@@ -1287,6 +1487,19 @@ public partial class VideoPlayerControl : UserControl
         _currentMediaPath = null;
         _hasMediaLoaded = false;
     }
+
+    private static Task DisposeDetachedPlayerAsync(FFmpegMediaPlayer mediaPlayer) =>
+        Task.Run(async () =>
+        {
+            try
+            {
+                await mediaPlayer.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[VideoPlayerControl] Background cleanup failed: {ex.Message}");
+            }
+        });
 }
 
 /// <summary>
@@ -1299,10 +1512,32 @@ public sealed class MediaOpenedEventArgs : EventArgs
         Path = path;
     }
 
+    public MediaOpenedEventArgs(MediaSource source, MediaInfo mediaInfo)
+    {
+        Source = source ?? throw new ArgumentNullException(nameof(source));
+        MediaInfo = mediaInfo ?? throw new ArgumentNullException(nameof(mediaInfo));
+        Path = source.DisplayName;
+    }
+
     /// <summary>
     /// Gets the full path of the media that was opened.
     /// </summary>
     public string Path { get; }
+
+    /// <summary>Gets the typed source when opened through the standalone API.</summary>
+    public MediaSource? Source { get; }
+
+    /// <summary>Gets discovered stream information.</summary>
+    public MediaInfo? MediaInfo { get; }
+}
+
+/// <summary>Provides data for the MediaOpening event.</summary>
+public sealed class MediaOpeningEventArgs : EventArgs
+{
+    public MediaOpeningEventArgs(MediaSource source) =>
+        Source = source ?? throw new ArgumentNullException(nameof(source));
+
+    public MediaSource Source { get; }
 }
 
 /// <summary>

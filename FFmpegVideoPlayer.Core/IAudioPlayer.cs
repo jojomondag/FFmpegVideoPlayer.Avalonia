@@ -42,9 +42,46 @@ public interface IAudioPlayer : IDisposable
     unsafe void QueueSamplesS16(short* samples, int sampleCount);
 
     /// <summary>
+    /// Queues pre-converted S16 samples, waiting for bounded backend capacity when needed.
+    /// Implementations written against earlier versions remain compatible through this
+    /// default implementation.
+    /// </summary>
+    unsafe void QueueSamplesS16(short* samples, int sampleCount, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        QueueSamplesS16(samples, sampleCount);
+    }
+
+    /// <summary>
     /// Queues float samples (will be converted internally if needed).
     /// </summary>
     /// <param name="samples">Float samples array (stereo interleaved).</param>
     void QueueSamples(float[] samples);
+
+    /// <summary>
+    /// Queues float samples, waiting for bounded backend capacity when needed.
+    /// Implementations written against earlier versions remain compatible through this
+    /// default implementation.
+    /// </summary>
+    void QueueSamples(float[] samples, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        QueueSamples(samples);
+    }
+
+    /// <summary>
+    /// Signals that no more samples will be queued for the current playback generation.
+    /// Backends can use this to start and drain clips shorter than their normal pre-roll.
+    /// </summary>
+    void CompleteInput()
+    {
+    }
+
+    /// <summary>
+    /// Gets whether all completed input has left the playback pipeline.
+    /// The compatibility default reflects that legacy implementations do not expose a
+    /// drainable pipeline.
+    /// </summary>
+    bool IsDrained => true;
 }
 

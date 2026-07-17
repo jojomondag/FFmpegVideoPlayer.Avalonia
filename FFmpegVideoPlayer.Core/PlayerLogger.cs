@@ -8,30 +8,28 @@ using System.Text.Json;
 namespace FFmpegVideoPlayer.Core;
 
 /// <summary>
-/// JSON logger for player operations. Logs all player commands and state changes to a JSON file.
+/// Lightweight diagnostic logger for player operations. File logging is opt-in so
+/// applications are never required to grant write access to their installation directory.
 /// </summary>
 public sealed class PlayerLogger : IDisposable
 {
     private readonly List<LogEntry> _logEntries = new();
     private readonly object _lock = new();
-    private readonly string _logFilePath;
+    private readonly string? _logFilePath;
     private bool _disposed;
     private DateTime _lastFlush = DateTime.Now;
 
     public PlayerLogger(string? logFilePath = null)
     {
-        if (string.IsNullOrEmpty(logFilePath))
+        if (!string.IsNullOrWhiteSpace(logFilePath))
         {
-            var logDir = Path.Combine(AppContext.BaseDirectory, "debug");
-            Directory.CreateDirectory(logDir);
-            _logFilePath = Path.Combine(logDir, $"player-log-{DateTime.Now:yyyyMMdd-HHmmss}.json");
-        }
-        else
-        {
-            _logFilePath = logFilePath;
+            _logFilePath = Path.GetFullPath(logFilePath);
+            var directory = Path.GetDirectoryName(_logFilePath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
         }
 
-        Log("PlayerLogger", "Initialized", new { LogFile = _logFilePath });
+        Log("PlayerLogger", "Initialized", new { FileLoggingEnabled = _logFilePath != null });
     }
 
     public void Log(string component, string operation, object? data = null)
@@ -51,12 +49,12 @@ public sealed class PlayerLogger : IDisposable
 
             _logEntries.Add(entry);
 
-            // Also write to debug output for immediate visibility
-            var dataStr = data != null ? $" | Data: {JsonSerializer.Serialize(data)}" : "";
-            Debug.WriteLine($"[{entry.TimestampLocal:HH:mm:ss.fff}] [{component}] {operation}{dataStr}");
+            // Do not emit data by default: media URLs can contain signed query strings,
+            // cookies, or other credentials. Applications can opt into a JSON log file.
+            Debug.WriteLine($"[{entry.TimestampLocal:HH:mm:ss.fff}] [{component}] {operation}");
             
             // Auto-flush every 5 seconds to ensure logs are saved even if app crashes
-            if ((DateTime.Now - _lastFlush).TotalSeconds > 5)
+            if (_logFilePath != null && (DateTime.Now - _lastFlush).TotalSeconds > 5)
             {
                 Flush();
             }
@@ -71,6 +69,9 @@ public sealed class PlayerLogger : IDisposable
             
             var clearedCount = _logEntries.Count;
             _logEntries.Clear();
+
+            if (_logFilePath == null)
+                return;
             
             // Write empty array to file to clear it
             try
@@ -97,7 +98,7 @@ public sealed class PlayerLogger : IDisposable
     {
         lock (_lock)
         {
-            if (_disposed || _logEntries.Count == 0) return;
+            if (_disposed || _logFilePath == null || _logEntries.Count == 0) return;
 
             try
             {
@@ -122,9 +123,35 @@ public sealed class PlayerLogger : IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        Flush();
+        lock (_lock)
+        {
+            if (_disposed) return;
+            FlushCore();
+            _disposed = true;
+        }
+    }
+
+    private void FlushCore()
+    {
+        if (_logFilePath == null || _logEntries.Count == 0)
+            return;
+
+        try
+        {
+            var options = new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            };
+
+            var json = JsonSerializer.Serialize(_logEntries, options);
+            File.WriteAllText(_logFilePath, json, Encoding.UTF8);
+            _lastFlush = DateTime.Now;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[PlayerLogger] Failed to write log file: {ex.Message}");
+        }
     }
 
     private class LogEntry
