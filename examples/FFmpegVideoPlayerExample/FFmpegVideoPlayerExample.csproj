@@ -19,9 +19,13 @@
     <PackageReference Include="Serilog.Sinks.Console" Version="5.0.0" />
   </ItemGroup>
 
-  <!-- Reference the main library project for development/testing -->
+  <!-- Reference the public control plus its implementation projects explicitly.
+       The main project keeps them private so NuGet exposes one package, while the
+       example uses their namespaces directly during source builds. -->
   <ItemGroup>
     <ProjectReference Include="../../Avalonia.FFmpegVideoPlayer.csproj" />
+    <ProjectReference Include="../../FFmpegVideoPlayer.Core/FFmpegVideoPlayer.Core.csproj" />
+    <ProjectReference Include="../../FFmpegVideoPlayer.Audio.OpenTK/FFmpegVideoPlayer.Audio.OpenTK.csproj" />
   </ItemGroup>
 
 </Project>
