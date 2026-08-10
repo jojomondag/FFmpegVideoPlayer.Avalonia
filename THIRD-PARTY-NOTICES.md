@@ -5,14 +5,14 @@ redistributes the native libraries identified below. Those libraries remain unde
 their own copyright and license terms; the project's MIT license does not replace
 or restrict those terms.
 
-## FFmpeg 8.0.1 release-branch build
+## FFmpeg 8.1.2 release-branch build
 
-Copyright (c) 2000-2025 the FFmpeg developers and other contributors.
+Copyright (c) 2000-2026 the FFmpeg developers and other contributors.
 
 The Windows x64 package payload contains five dynamically loaded FFmpeg libraries.
-Each DLL reports version `n8.0.1-23-gf9a3e1b776-20251204`, i.e. FFmpeg's 8.0
+Each DLL reports version `n8.1.2-34-g9b6c8969e0-20260810`, i.e. FFmpeg's 8.1
 release branch at commit
-[`f9a3e1b7763669c5a29287b1dadc2f6288677e97`](https://github.com/FFmpeg/FFmpeg/commit/f9a3e1b7763669c5a29287b1dadc2f6288677e97).
+[`9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b`](https://github.com/FFmpeg/FFmpeg/commit/9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b).
 Each DLL also reports `LGPL version 3 or later`. Its embedded configure command
 contains `--enable-version3 --enable-shared --disable-static`, disables GPL-only
 and nonfree components, and identifies the `/ffbuild` Windows x64 build environment.
@@ -22,25 +22,20 @@ FFmpeg's official source and licensing pages are
 <https://ffmpeg.org/download.html> and <https://ffmpeg.org/legal.html>; its
 canonical Git repository is <https://git.ffmpeg.org/ffmpeg.git>.
 
-The configuration and version format are consistent with BtbN's
-`win64-lgpl-shared` build family, but that is a reproducibility reference rather
-than verified archive provenance. A build-recipe snapshot immediately preceding
-the DLL build date is
-[`BtbN/FFmpeg-Builds@766a6a2c088ff771a5d383428def6f5791490e56`](https://github.com/BtbN/FFmpeg-Builds/tree/766a6a2c088ff771a5d383428def6f5791490e56).
-That recipe records enabled third-party components, source URLs, checksums, and
-build commands, but the repository cannot verify that it was the recipe actually
-used for these DLLs. The original downloaded archive name, URL, and archive checksum
-were not retained when the DLLs were imported, so this notice does not invent them:
-the embedded version/configuration and the per-file SHA-256 values below are the
-authoritative identifiers for the files actually redistributed by this package.
+The binaries were imported from BtbN's
+[`ffmpeg-n8.1-latest-win64-lgpl-shared-8.1.zip`](https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-lgpl-shared-8.1.zip)
+archive. The downloaded archive SHA-256 was
+`40F8BCCCD4838A8C9A94C63DE976501A7BF044899BCBC6E02BCAF3C680EF7D35`.
+The embedded version/configuration and the per-file SHA-256 values below identify
+the files actually redistributed by this package.
 
 | Packaged file | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `runtimes/win-x64/native/avcodec-62.dll` | 78,149,120 | `3EECF00886B7A22C4C2AE4999D9132C989C3170187D254F59FD2006FA79FBF35` |
-| `runtimes/win-x64/native/avformat-62.dll` | 21,750,272 | `B689A6101A1AB8286C5D9F2DBF10ABC574EA23CCB98F2B45AFBCC885EB1DF1E2` |
-| `runtimes/win-x64/native/avutil-60.dll` | 2,939,904 | `8B6729BAD95392537E0BBA73BCE61587212EFE179E0381DD2AF9574F8717CC23` |
-| `runtimes/win-x64/native/swresample-6.dll` | 723,456 | `BAC2C3EC4D27B1112B8F4DFBA924DC272FB611F424FCC80AD7EA0D88368D1C7A` |
-| `runtimes/win-x64/native/swscale-9.dll` | 1,910,272 | `D0324617295B3F055FD4C60002A60642D1625CCE91B87C4F6183F63FA7D1FC00` |
+| `runtimes/win-x64/native/avcodec-62.dll` | 70,883,840 | `76B3BEEC1E74A37B7BB64B717241DA1D6F63F6AC4B7ED3C6B051B084AA6F8E5C` |
+| `runtimes/win-x64/native/avformat-62.dll` | 22,077,440 | `8188D265D5AE78EF0681990D5BBF44421D3C563D58B088A85229EE5CF2444BD2` |
+| `runtimes/win-x64/native/avutil-60.dll` | 2,937,856 | `CD5F740954B77DE0751F0A7A99E792DD6BF3078888EDCEC185AD147F98172115` |
+| `runtimes/win-x64/native/swresample-6.dll` | 723,968 | `984EA83CC14FE7337275A4882F8F392984A34D8749A2EA706E470FCA1BF03E34` |
+| `runtimes/win-x64/native/swscale-9.dll` | 12,570,624 | `460218915ACFB8EEDA061E7BA1A5F5D1CA19F7617A736762E03BAA74FF25656A` |
 
 License texts are packaged as [`LICENSES/LGPL-3.0-or-later.txt`](LICENSES/LGPL-3.0-or-later.txt)
 and, because LGPLv3 incorporates GPLv3, [`LICENSES/GPL-3.0.txt`](LICENSES/GPL-3.0.txt).
@@ -75,11 +70,11 @@ Source NuGet package identifiers:
 Equivalent network access to the source and build material is available here:
 
 - FFmpeg exact source:
-  <https://github.com/FFmpeg/FFmpeg/archive/f9a3e1b7763669c5a29287b1dadc2f6288677e97.tar.gz>
+  <https://github.com/FFmpeg/FFmpeg/archive/9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b.tar.gz>
 - FFmpeg official source repository and license information:
   <https://git.ffmpeg.org/ffmpeg.git> and <https://ffmpeg.org/legal.html>
-- FFmpeg Windows build scripts and dependency recipes:
-  <https://github.com/BtbN/FFmpeg-Builds/archive/766a6a2c088ff771a5d383428def6f5791490e56.tar.gz>
+- FFmpeg Windows binary archive:
+  <https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-lgpl-shared-8.1.zip>
 - OpenAL Soft exact source:
   <https://github.com/kcat/openal-soft/archive/d3875f333fb6abe2f39d82caca329414871ae53b.tar.gz>
 

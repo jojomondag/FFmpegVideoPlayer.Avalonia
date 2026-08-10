@@ -10,8 +10,28 @@ namespace FFmpegVideoPlayer.Core;
 /// <summary>
 /// Locates packaged FFmpeg binaries (NuGet runtimes) and configures the native search path.
 /// </summary>
-internal static class FFmpegPathResolver
+internal static unsafe class FFmpegPathResolver
 {
+    // FFmpeg reports a non-fatal warning for H.264 streams that carry an SEI
+    // message after the picture it describes. The decoder deliberately ignores
+    // that metadata, but the diagnostic is extremely noisy for normal playback.
+    // Keep the native callback alive for the lifetime of the process and filter
+    // only this known message; all other FFmpeg diagnostics still use FFmpeg's
+    // default callback.
+    private static readonly av_log_set_callback_callback s_logCallback = FilterLog;
+
+    [ThreadStatic]
+    private static LateSeiLogFilterState s_lateSeiLogFilterState;
+
+    private const string LateSeiHeader = "Late SEI";
+    private const string MissingFeatureContinuation =
+        " is not implemented. Update your FFmpeg version to the newest one from Git. " +
+        "If the problem still occurs, it means that your file has a feature which has not " +
+        "been implemented.\n";
+    private const string SampleUploadContinuation =
+        "If you want to help, upload a sample of this file to https://streams.videolan.org/upload/ " +
+        "and contact the ffmpeg-devel mailing list. (ffmpeg-devel@ffmpeg.org)\n";
+
     /// <summary>
     /// Tries to find a bundled FFmpeg path under runtimes/&lt;rid&gt;/native and, if found,
     /// configures the process search path so the native loader can locate dependencies.
@@ -98,9 +118,65 @@ internal static class FFmpegPathResolver
         // FFmpeg.AutoGen 8.x's DynamicallyLoadedBindings.Initialize is idempotent and
         // re-probes every function, so we can call it again after the search path changes.
         DynamicallyLoadedBindings.Initialize();
+        ffmpeg.av_log_set_callback(s_logCallback);
 #if DEBUG
         Console.WriteLine($"[FFmpegPathResolver] Bindings initialized (RootPath: {ffmpeg.RootPath})");
 #endif
+    }
+
+    private static unsafe void FilterLog(void* avcl, int level, string format, byte* vl)
+    {
+        // avpriv_request_sample emits this diagnostic as three separate log
+        // callbacks: "Late SEI", the generic "is not implemented" text, and
+        // the optional upload-help text. Track the continuation on the same
+        // decoder thread so only this diagnostic is removed.
+        if (ShouldSuppressLateSeiLogFragment(format, ref s_lateSeiLogFilterState))
+        {
+            return;
+        }
+
+        ffmpeg.av_log_default_callback(avcl, level, format, vl);
+    }
+
+    internal static bool ShouldSuppressLateSeiLogFragment(
+        string? format,
+        ref LateSeiLogFilterState state)
+    {
+        switch (state)
+        {
+            case LateSeiLogFilterState.None:
+                if (string.Equals(format, LateSeiHeader, StringComparison.Ordinal))
+                {
+                    state = LateSeiLogFilterState.ExpectMissingFeatureContinuation;
+                    return true;
+                }
+
+                return false;
+
+            case LateSeiLogFilterState.ExpectMissingFeatureContinuation:
+                if (string.Equals(format, MissingFeatureContinuation, StringComparison.Ordinal))
+                {
+                    state = LateSeiLogFilterState.ExpectSampleUploadContinuation;
+                    return true;
+                }
+
+                state = LateSeiLogFilterState.None;
+                return false;
+
+            case LateSeiLogFilterState.ExpectSampleUploadContinuation:
+                if (string.Equals(format, SampleUploadContinuation, StringComparison.Ordinal))
+                {
+                    state = LateSeiLogFilterState.None;
+                    return true;
+                }
+
+                state = LateSeiLogFilterState.None;
+                return false;
+
+            default:
+                state = LateSeiLogFilterState.None;
+                return false;
+        }
     }
 
     /// <summary>
@@ -182,5 +258,12 @@ internal static class FFmpegPathResolver
 
         Environment.SetEnvironmentVariable(variable, newValue);
     }
+}
+
+internal enum LateSeiLogFilterState
+{
+    None,
+    ExpectMissingFeatureContinuation,
+    ExpectSampleUploadContinuation
 }
 

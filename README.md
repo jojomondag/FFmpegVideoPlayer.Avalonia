@@ -12,7 +12,7 @@ seekable streams, DASH manifests and YouTube URLs.
 ## Install
 
 ```bash
-dotnet add package FFmpegVideoPlayer.Avalonia --version 3.0.0
+dotnet add package FFmpegVideoPlayer.Avalonia --version 3.0.2
 ```
 
 Version 3 requires **Avalonia 12.1.0+ (below 13)** and **.NET 8+**. The single
@@ -20,7 +20,7 @@ package contains the Avalonia control, Core and OpenTK/OpenAL audio implementati
 applications do not reference separate player packages.
 
 The managed player API is cross-platform, but the native payload is platform-specific:
-FFmpeg 8.0.1 DLLs are bundled **only for Windows x64**. Windows x86/ARM64, macOS,
+FFmpeg 8.1.2 DLLs are bundled **only for Windows x64**. Windows x86/ARM64, macOS,
 and Linux require a compatible system FFmpeg installation or an explicitly supplied
 native-library path. OpenAL Soft audio DLLs are bundled separately for Windows x64,
 x86, and ARM64.
@@ -53,6 +53,16 @@ asynchronously and stale opens are cancelled automatically:
     Source="https://youtu.be/Ppejf4-YmSM"
     AutoPlay="True"
     ShowOpenButton="False" />
+```
+
+Applications with a small set of known tutorial videos can resolve their YouTube
+metadata in the background. This does not download the full video; it reads metadata
+and the small MP4 initialization/index ranges needed to prepare playback:
+
+```csharp
+await YouTubeMediaSourceResolver.Instance.PreloadAsync(
+    "https://youtu.be/Ppejf4-YmSM",
+    cancellationToken);
 ```
 
 For custom headers, in-memory media or manifests, use the typed API:
@@ -110,7 +120,7 @@ dotnet run
 `MediaSource` recipes.
 
 **Lifecycle:** `PlaybackState`, `LastError`, `MediaOpening`, `MediaOpened`,
-`MediaFailed`, `PlaybackStateChanged`, and `MediaEnded`.
+`FirstFramePresented`, `MediaFailed`, `PlaybackStateChanged`, and `MediaEnded`.
 
 **Methods:** `OpenAsync`, `Open`, `OpenUri`, `CloseAsync`, `Play`, `Pause`,
 `Stop`, `TogglePlayPause`, `Seek`, and `ToggleMute`.

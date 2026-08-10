@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Added `YouTubeMediaSourceResolver.PreloadAsync` with coalesced, short-lived resolution caching for known remote videos.
+- Added `VideoPlayerControl.FirstFramePresented`, raised once after the active source has rendered its first frame.
+
+### Fixed
+- Updated the bundled Windows x64 FFmpeg libraries to the FFmpeg 8.1.2 release branch and filtered the split, non-fatal `Late SEI is not implemented` decoder diagnostic.
+- Autoplay no longer decodes and seeks back over the first frame before playback, avoiding a duplicate network read for YouTube sources.
+- Video presentation now follows the audio backend clock when available. Audio-master waits use bounded retry/drop thresholds after stalls, while video-only playback follows a pause-aware wall clock until a frame is due.
+- Seeks, stops, and source replacements now invalidate decoded and queued callbacks from the previous timeline without corrupting pending-frame accounting.
+- YouTube resolution caching retains all in-flight requests for coalescing, bounds completed entries, prunes expired results, and applies a cache-owned timeout.
+
 ## [2.9.0] - 2026-05-29
 
 ### Added

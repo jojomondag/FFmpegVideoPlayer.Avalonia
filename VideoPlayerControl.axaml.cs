@@ -59,6 +59,7 @@ public partial class VideoPlayerControl : UserControl
     private CancellationTokenSource? _sourceOpenCancellation;
     private long _openGeneration;
     private MediaSource? _requestedSource;
+    private readonly FirstFramePresentationTracker _firstFramePresentation = new();
 
     /// <summary>
     /// Defines the Volume property.
@@ -454,6 +455,11 @@ public partial class VideoPlayerControl : UserControl
     /// Occurs when media is successfully opened.
     /// </summary>
     public event EventHandler<MediaOpenedEventArgs>? MediaOpened;
+
+    /// <summary>
+    /// Occurs once after the first video frame for the active source has been rendered successfully.
+    /// </summary>
+    public event EventHandler? FirstFramePresented;
 
     /// <summary>Occurs immediately before source resolution starts.</summary>
     public event EventHandler<MediaOpeningEventArgs>? MediaOpening;
@@ -876,12 +882,26 @@ public partial class VideoPlayerControl : UserControl
     private void OnFrameReady(object? sender, FrameEventArgs e)
     {
         // Note: This is already called on the UI thread via Dispatcher.UIThread.Post in FFmpegMediaPlayer
+        var mediaGeneration = e.MediaGeneration;
+        var timelineGeneration = e.TimelineGeneration;
+        if (sender is not FFmpegMediaPlayer mediaPlayer
+            || mediaGeneration != mediaPlayer.MediaGeneration
+            || timelineGeneration != mediaPlayer.TimelineGeneration)
+        {
+            // A frame can already be queued on the dispatcher when its source is
+            // replaced or closed. Never let that stale frame flash in the new renderer.
+            e.Dispose();
+            return;
+        }
+
+        var rendered = false;
         try
         {
             if (_videoRenderer != null)
             {
                 // Use the renderer interface
                 _videoRenderer.RenderFrame(e.Data, e.Width, e.Height, e.Stride);
+                rendered = true;
             }
             else
             {
@@ -895,6 +915,20 @@ public partial class VideoPlayerControl : UserControl
         finally
         {
             e.Dispose();
+        }
+
+        if (rendered && _firstFramePresentation.TryPresent(
+                Volatile.Read(ref _openGeneration),
+                mediaGeneration))
+        {
+            try
+            {
+                FirstFramePresented?.Invoke(this, EventArgs.Empty);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[VideoPlayerControl] FirstFramePresented subscriber failed: {ex.Message}");
+            }
         }
     }
 
@@ -915,12 +949,18 @@ public partial class VideoPlayerControl : UserControl
             return CreateInitializationFailure();
 
         CancelControlOpen();
+        var generation = Volatile.Read(ref _openGeneration);
         Volatile.Write(ref _requestedSource, source);
         _hasMediaLoaded = false;
         MediaOpening?.Invoke(this, new MediaOpeningEventArgs(source));
         var result = _mediaPlayer.Open(source, options);
-        if (result.Succeeded && result.MediaInfo is not null)
-            CompleteMediaOpen(source, result.MediaInfo);
+        if (generation == Volatile.Read(ref _openGeneration)
+            && ReferenceEquals(source, Volatile.Read(ref _requestedSource))
+            && result.Succeeded
+            && result.MediaInfo is not null)
+        {
+            CompleteMediaOpen(source, result.MediaInfo, generation);
+        }
         return result;
     }
 
@@ -936,6 +976,7 @@ public partial class VideoPlayerControl : UserControl
             return CreateInitializationFailure();
 
         var generation = Interlocked.Increment(ref _openGeneration);
+        _firstFramePresentation.Reset();
         Volatile.Write(ref _requestedSource, source);
         var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var previousCancellation = Interlocked.Exchange(ref _sourceOpenCancellation, operationCancellation);
@@ -958,7 +999,7 @@ public partial class VideoPlayerControl : UserControl
                     if (generation == Volatile.Read(ref _openGeneration) &&
                         ReferenceEquals(source, Volatile.Read(ref _requestedSource)))
                     {
-                        CompleteMediaOpen(source, result.MediaInfo);
+                        CompleteMediaOpen(source, result.MediaInfo, generation);
                     }
                 });
             }
@@ -1003,27 +1044,47 @@ public partial class VideoPlayerControl : UserControl
         }
     }
 
-    private void CompleteMediaOpen(MediaSource source, MediaInfo mediaInfo)
+    private void CompleteMediaOpen(MediaSource source, MediaInfo mediaInfo, long generation)
     {
-        if (_mediaPlayer is null)
+        var mediaPlayer = _mediaPlayer;
+        if (mediaPlayer is null
+            || generation != Volatile.Read(ref _openGeneration)
+            || !ReferenceEquals(source, Volatile.Read(ref _requestedSource)))
+        {
             return;
+        }
 
         _currentMediaPath = source.DisplayName;
         _hasMediaLoaded = true;
-        MediaOpened?.Invoke(this, new MediaOpenedEventArgs(source, mediaInfo));
 
         if (mediaInfo.HasVideo)
         {
             SetupVideoRenderer();
-            _mediaPlayer.DecodeFirstFrame();
+            _firstFramePresentation.Activate(generation, mediaPlayer.MediaGeneration);
         }
         else
         {
+            _firstFramePresentation.Reset();
             ShowAudioOnlyPlaceholder();
         }
 
+        MediaOpened?.Invoke(this, new MediaOpenedEventArgs(source, mediaInfo));
+
+        if (generation != Volatile.Read(ref _openGeneration)
+            || !ReferenceEquals(source, Volatile.Read(ref _requestedSource))
+            || !ReferenceEquals(mediaPlayer, _mediaPlayer))
+        {
+            return;
+        }
+
         if (AutoPlay)
-            _mediaPlayer.Play();
+        {
+            mediaPlayer.Play();
+        }
+        else if (mediaInfo.HasVideo)
+        {
+            mediaPlayer.DecodeFirstFrame();
+        }
     }
 
     private void EnsurePlayerInitialized()
@@ -1111,6 +1172,7 @@ public partial class VideoPlayerControl : UserControl
     private void CancelControlOpen()
     {
         Interlocked.Increment(ref _openGeneration);
+        _firstFramePresentation.Reset();
         Volatile.Write(ref _requestedSource, null);
         var cancellation = Interlocked.Exchange(ref _sourceOpenCancellation, null);
         TryCancel(cancellation);

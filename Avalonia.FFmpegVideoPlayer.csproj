@@ -14,7 +14,7 @@
     <Authors>jojomondag</Authors>
     <Company>jojomondag</Company>
     <Description>Standalone FFmpeg media player for Avalonia 12. Bundles FFmpeg for Windows x64; other OS/architectures use a compatible system FFmpeg installation.</Description>
-    <PackageReleaseNotes>v3.0.0: Targets Avalonia 12.1, ships as one standalone package, adds typed and asynchronous media sources, built-in YouTube resolution, bounded/cancellable network I/O, lifecycle state, and structured media errors.</PackageReleaseNotes>
+    <PackageReleaseNotes>v3.0.2: Updates the bundled Windows x64 FFmpeg libraries to 8.1.2 and suppresses the split, non-fatal Late SEI decoder diagnostic. Also includes the playback timing, first-frame, YouTube caching, and lifecycle fixes from the 3.0.0 development cycle.</PackageReleaseNotes>
     <PackageTags>avalonia;ffmpeg;video;audio;player;media;cross-platform;windows-x64;system-ffmpeg</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/jojomondag/FFmpegVideoPlayer.Avalonia</PackageProjectUrl>

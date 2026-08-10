@@ -1,6 +1,8 @@
 using System.Xml.Linq;
 using FFmpegVideoPlayer.Core;
+using YoutubeExplode;
 using YoutubeExplode.Common;
+using YoutubeExplode.Videos;
 using YoutubeExplode.Videos.Streams;
 
 namespace FFmpegVideoPlayer.Tests;
@@ -73,6 +75,186 @@ public sealed class YouTubeMediaSourceResolverTests
         Assert.Equal(new SegmentBaseRanges(43, 44, 63), ranges);
     }
 
+    [Fact]
+    public async Task Preload_coalesces_concurrent_resolution_and_reuses_the_cached_result()
+    {
+        var resolution = new TaskCompletionSource<ResolvedYouTubeMedia>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var resolutionCalls = 0;
+        var resolver = new YouTubeMediaSourceResolver(
+            new YoutubeClient(),
+            preferredMaximumHeight: 1080,
+            (_, _) =>
+            {
+                Interlocked.Increment(ref resolutionCalls);
+                return resolution.Task;
+            },
+            cacheDuration: TimeSpan.FromMinutes(1));
+
+        var first = resolver.PreloadAsync("https://youtu.be/Ppejf4-YmSM");
+        var second = resolver.PreloadAsync("https://www.youtube.com/watch?v=Ppejf4-YmSM");
+
+        Assert.Equal(1, Volatile.Read(ref resolutionCalls));
+        resolution.SetResult(Resolution());
+        await Task.WhenAll(first, second);
+
+        await resolver.PreloadAsync("https://youtu.be/Ppejf4-YmSM");
+
+        Assert.Equal(1, Volatile.Read(ref resolutionCalls));
+    }
+
+    [Fact]
+    public async Task Failed_preload_is_evicted_so_the_next_attempt_can_retry()
+    {
+        var resolutionCalls = 0;
+        var resolver = new YouTubeMediaSourceResolver(
+            new YoutubeClient(),
+            preferredMaximumHeight: 1080,
+            (_, _) => Interlocked.Increment(ref resolutionCalls) == 1
+                ? Task.FromException<ResolvedYouTubeMedia>(new InvalidOperationException("transient"))
+                : Task.FromResult(Resolution()),
+            cacheDuration: TimeSpan.FromMinutes(1));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            resolver.PreloadAsync("https://youtu.be/Ppejf4-YmSM"));
+
+        await resolver.PreloadAsync("https://youtu.be/Ppejf4-YmSM");
+
+        Assert.Equal(2, Volatile.Read(ref resolutionCalls));
+    }
+
+    [Fact]
+    public async Task A_new_lookup_prunes_expired_results_for_other_video_ids()
+    {
+        var now = new DateTimeOffset(2026, 8, 10, 12, 0, 0, TimeSpan.Zero);
+        var resolutionCalls = 0;
+        var resolver = new YouTubeMediaSourceResolver(
+            new YoutubeClient(),
+            preferredMaximumHeight: 1080,
+            (_, _) =>
+            {
+                Interlocked.Increment(ref resolutionCalls);
+                return Task.FromResult(Resolution());
+            },
+            cacheDuration: TimeSpan.FromMinutes(1),
+            utcNow: () => now,
+            resolutionTimeout: TimeSpan.FromSeconds(1),
+            resolutionCacheCapacity: 8);
+
+        await resolver.PreloadAsync("https://youtu.be/Ppejf4-YmSM");
+        Assert.Equal(1, resolver.CachedResolutionCount);
+
+        now = now.AddMinutes(2);
+        await resolver.PreloadAsync("https://youtu.be/dQw4w9WgXcQ");
+
+        Assert.Equal(2, Volatile.Read(ref resolutionCalls));
+        Assert.Equal(1, resolver.CachedResolutionCount);
+    }
+
+    [Fact]
+    public async Task Cache_capacity_evicts_the_oldest_completed_resolution()
+    {
+        var now = new DateTimeOffset(2026, 8, 10, 12, 0, 0, TimeSpan.Zero);
+        var resolutionCalls = 0;
+        var resolver = new YouTubeMediaSourceResolver(
+            new YoutubeClient(),
+            preferredMaximumHeight: 1080,
+            (_, _) =>
+            {
+                Interlocked.Increment(ref resolutionCalls);
+                return Task.FromResult(Resolution());
+            },
+            cacheDuration: TimeSpan.FromMinutes(30),
+            utcNow: () => now,
+            resolutionTimeout: TimeSpan.FromSeconds(1),
+            resolutionCacheCapacity: 2);
+
+        await resolver.PreloadAsync("https://youtu.be/Ppejf4-YmSM");
+        now = now.AddSeconds(1);
+        await resolver.PreloadAsync("https://youtu.be/dQw4w9WgXcQ");
+        now = now.AddSeconds(1);
+        await resolver.PreloadAsync("https://youtu.be/abcdefghijk");
+
+        Assert.Equal(2, resolver.CachedResolutionCount);
+        Assert.Equal(3, Volatile.Read(ref resolutionCalls));
+
+        await resolver.PreloadAsync("https://youtu.be/Ppejf4-YmSM");
+
+        Assert.Equal(4, Volatile.Read(ref resolutionCalls));
+        Assert.Equal(2, resolver.CachedResolutionCount);
+    }
+
+    [Fact]
+    public async Task Cache_capacity_never_evicts_in_flight_work_or_duplicates_its_request()
+    {
+        var now = new DateTimeOffset(2026, 8, 10, 12, 0, 0, TimeSpan.Zero);
+        var firstResolution = new TaskCompletionSource<ResolvedYouTubeMedia>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondResolution = new TaskCompletionSource<ResolvedYouTubeMedia>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var resolutionCalls = 0;
+        var resolver = new YouTubeMediaSourceResolver(
+            new YoutubeClient(),
+            preferredMaximumHeight: 1080,
+            (videoId, _) =>
+            {
+                Interlocked.Increment(ref resolutionCalls);
+                return videoId.ToString() == "Ppejf4-YmSM"
+                    ? firstResolution.Task
+                    : secondResolution.Task;
+            },
+            cacheDuration: TimeSpan.FromMinutes(30),
+            utcNow: () => now,
+            resolutionTimeout: TimeSpan.FromSeconds(5),
+            resolutionCacheCapacity: 1);
+
+        var first = resolver.PreloadAsync("https://youtu.be/Ppejf4-YmSM");
+        now = now.AddSeconds(1);
+        var second = resolver.PreloadAsync("https://youtu.be/dQw4w9WgXcQ");
+        var coalescedFirst = resolver.PreloadAsync("https://youtu.be/Ppejf4-YmSM");
+
+        Assert.Equal(2, Volatile.Read(ref resolutionCalls));
+        Assert.Equal(2, resolver.CachedResolutionCount);
+
+        firstResolution.SetResult(Resolution());
+        secondResolution.SetResult(Resolution());
+        await Task.WhenAll(first, second, coalescedFirst);
+
+        Assert.True(SpinWait.SpinUntil(
+            () => resolver.CachedResolutionCount == 1,
+            TimeSpan.FromSeconds(1)));
+        Assert.Equal(2, Volatile.Read(ref resolutionCalls));
+    }
+
+    [Fact]
+    public async Task Shared_resolution_has_a_cache_owned_timeout_and_is_evicted_after_timeout()
+    {
+        var timeoutTokenCanceled = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var resolutionCalls = 0;
+        var resolver = new YouTubeMediaSourceResolver(
+            new YoutubeClient(),
+            preferredMaximumHeight: 1080,
+            (_, cancellationToken) =>
+            {
+                Interlocked.Increment(ref resolutionCalls);
+                cancellationToken.Register(() => timeoutTokenCanceled.TrySetResult());
+                return new TaskCompletionSource<ResolvedYouTubeMedia>(
+                    TaskCreationOptions.RunContinuationsAsynchronously).Task;
+            },
+            cacheDuration: TimeSpan.FromMinutes(1),
+            utcNow: null,
+            resolutionTimeout: TimeSpan.FromMilliseconds(50),
+            resolutionCacheCapacity: 8);
+
+        await Assert.ThrowsAsync<TimeoutException>(() =>
+            resolver.PreloadAsync("https://youtu.be/Ppejf4-YmSM"));
+        await timeoutTokenCanceled.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(1, Volatile.Read(ref resolutionCalls));
+        Assert.Equal(0, resolver.CachedResolutionCount);
+    }
+
     private static VideoOnlyStreamInfo Video(
         string url,
         Container container,
@@ -88,6 +270,21 @@ public sealed class YouTubeMediaSourceResolverTests
             codec,
             new VideoQuality(height, frameRate),
             new Resolution(height * 16 / 9, height));
+
+    private static ResolvedYouTubeMedia Resolution() =>
+        new(
+            TimeSpan.FromMinutes(3),
+            Video("video.mp4", Container.Mp4, "avc1.640028", 1080, 30, 5_000_000),
+            new SegmentBaseRanges(740, 741, 1288),
+            new AudioOnlyStreamInfo(
+                "audio.m4a",
+                Container.Mp4,
+                new FileSize(1_000_000),
+                new Bitrate(160_000),
+                "mp4a.40.2",
+                null,
+                true),
+            new SegmentBaseRanges(722, 723, 1030));
 
     private static void WriteBox(byte[] destination, int offset, int size, string type)
     {

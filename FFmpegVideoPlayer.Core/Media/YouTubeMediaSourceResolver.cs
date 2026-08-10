@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -20,8 +21,18 @@ namespace FFmpegVideoPlayer.Core;
 /// </summary>
 public sealed class YouTubeMediaSourceResolver
 {
+    private static readonly TimeSpan ResolutionCacheDuration = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan DefaultResolutionTimeout = TimeSpan.FromSeconds(45);
+    private const int DefaultCompletedResolutionCacheCapacity = 64;
     private readonly int _preferredMaximumHeight;
     private readonly YoutubeClient _youtube;
+    private readonly Func<VideoId, CancellationToken, Task<ResolvedYouTubeMedia>> _resolveMedia;
+    private readonly TimeSpan _resolutionCacheDuration;
+    private readonly TimeSpan _resolutionTimeout;
+    private readonly Func<DateTimeOffset> _utcNow;
+    private readonly int _completedResolutionCacheCapacity;
+    private readonly object _resolutionCacheGate = new();
+    private readonly Dictionary<string, CachedResolution> _resolutionCache = new(StringComparer.Ordinal);
 
     public static YouTubeMediaSourceResolver Instance { get; } = new();
 
@@ -31,11 +42,34 @@ public sealed class YouTubeMediaSourceResolver
     }
 
     internal YouTubeMediaSourceResolver(YoutubeClient youtube, int preferredMaximumHeight = 1080)
+        : this(youtube, preferredMaximumHeight, resolveMedia: null, cacheDuration: null)
+    {
+    }
+
+    internal YouTubeMediaSourceResolver(
+        YoutubeClient youtube,
+        int preferredMaximumHeight,
+        Func<VideoId, CancellationToken, Task<ResolvedYouTubeMedia>>? resolveMedia,
+        TimeSpan? cacheDuration,
+        Func<DateTimeOffset>? utcNow = null,
+        TimeSpan? resolutionTimeout = null,
+        int? resolutionCacheCapacity = null)
     {
         _youtube = youtube ?? throw new ArgumentNullException(nameof(youtube));
         if (preferredMaximumHeight <= 0)
             throw new ArgumentOutOfRangeException(nameof(preferredMaximumHeight));
+        if (cacheDuration is { } configuredCacheDuration && configuredCacheDuration <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(cacheDuration));
+        if (resolutionTimeout is { } configuredResolutionTimeout && configuredResolutionTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(resolutionTimeout));
+        if (resolutionCacheCapacity is { } configuredCacheCapacity && configuredCacheCapacity <= 0)
+            throw new ArgumentOutOfRangeException(nameof(resolutionCacheCapacity));
         _preferredMaximumHeight = preferredMaximumHeight;
+        _resolveMedia = resolveMedia ?? ResolveMediaAsync;
+        _resolutionCacheDuration = cacheDuration ?? ResolutionCacheDuration;
+        _resolutionTimeout = resolutionTimeout ?? DefaultResolutionTimeout;
+        _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
+        _completedResolutionCacheCapacity = resolutionCacheCapacity ?? DefaultCompletedResolutionCacheCapacity;
     }
 
     public static bool IsSupportedUrl(string value)
@@ -56,11 +90,183 @@ public sealed class YouTubeMediaSourceResolver
             token => ResolveSessionAsync(youtubeUrl, token));
     }
 
+    /// <summary>
+    /// Resolves and caches the metadata needed to open a YouTube source later. This does
+    /// not download the full video; it reads metadata plus small MP4 initialization/index
+    /// ranges needed for playback. This is useful for known tutorial videos that should
+    /// start quickly when the user opens them.
+    /// </summary>
+    public async Task PreloadAsync(
+        string youtubeUrl,
+        CancellationToken cancellationToken = default)
+    {
+        var videoId = VideoId.Parse(youtubeUrl);
+        _ = await GetResolutionAsync(videoId, cancellationToken).ConfigureAwait(false);
+    }
+
     private async ValueTask<MediaSourceSession> ResolveSessionAsync(
         string youtubeUrl,
         CancellationToken cancellationToken = default)
     {
         var videoId = VideoId.Parse(youtubeUrl);
+        var resolution = await GetResolutionAsync(videoId, cancellationToken).ConfigureAwait(false);
+
+        const string manifestFileName = "youtube.mpd";
+        const string videoFileName = "video.mp4";
+        const string audioFileName = "audio.mp4";
+        var dashManifest = BuildDashManifest(
+            resolution.Duration,
+            videoFileName,
+            resolution.VideoStream,
+            resolution.VideoRanges,
+            audioFileName,
+            resolution.AudioStream,
+            resolution.AudioRanges);
+
+        var loopback = new LoopbackMediaSession(
+            manifestFileName,
+            dashManifest,
+            [
+                new MediaResource(
+                    videoFileName,
+                    "video/mp4",
+                    resolution.VideoStream.Size.Bytes,
+                    token => _youtube.Videos.Streams.GetAsync(resolution.VideoStream, token)),
+                new MediaResource(
+                    audioFileName,
+                    "audio/mp4",
+                    resolution.AudioStream.Size.Bytes,
+                    token => _youtube.Videos.Streams.GetAsync(resolution.AudioStream, token)),
+            ]);
+        return new MediaSourceSession(loopback.PlaybackUrl, owner: loopback);
+    }
+
+    private async ValueTask<ResolvedYouTubeMedia> GetResolutionAsync(
+        VideoId videoId,
+        CancellationToken cancellationToken)
+    {
+        var cacheKey = videoId.ToString();
+        Task<ResolvedYouTubeMedia> resolutionTask;
+        lock (_resolutionCacheGate)
+        {
+            var now = _utcNow();
+            PruneResolutionCacheLocked(now);
+            TrimCompletedResolutionCacheLocked();
+            if (_resolutionCache.TryGetValue(cacheKey, out var cached)
+                && (!cached.ResolutionTask.IsCompleted
+                    || now - cached.CreatedAt < _resolutionCacheDuration))
+            {
+                resolutionTask = cached.ResolutionTask;
+            }
+            else
+            {
+                _resolutionCache.Remove(cacheKey);
+
+                // Resolution is deliberately independent of an individual caller. A closed
+                // player stops waiting immediately, while the bounded request can finish and
+                // warm the cache for the next open instead of throwing all that work away.
+                resolutionTask = ResolveMediaWithTimeoutAsync(videoId);
+                _resolutionCache[cacheKey] = new CachedResolution(now, resolutionTask);
+                _ = ObserveResolutionCompletionAsync(cacheKey, resolutionTask);
+            }
+        }
+
+        try
+        {
+            return await resolutionTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch when (resolutionTask.IsFaulted || resolutionTask.IsCanceled)
+        {
+            lock (_resolutionCacheGate)
+            {
+                if (_resolutionCache.TryGetValue(cacheKey, out var cached)
+                    && ReferenceEquals(cached.ResolutionTask, resolutionTask))
+                {
+                    _resolutionCache.Remove(cacheKey);
+                }
+            }
+            throw;
+        }
+    }
+
+    private async Task<ResolvedYouTubeMedia> ResolveMediaWithTimeoutAsync(VideoId videoId)
+    {
+        using var timeoutCancellation = new CancellationTokenSource(_resolutionTimeout);
+        try
+        {
+            var resolutionTask = _resolveMedia(videoId, timeoutCancellation.Token);
+            return await resolutionTask.WaitAsync(timeoutCancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception) when (timeoutCancellation.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"Resolving YouTube video '{videoId}' exceeded the {_resolutionTimeout.TotalSeconds:0.#} second timeout.",
+                exception);
+        }
+    }
+
+    private void PruneResolutionCacheLocked(DateTimeOffset now)
+    {
+        foreach (var cacheKey in _resolutionCache
+                     .Where(entry => entry.Value.ResolutionTask.IsCompleted
+                         && now - entry.Value.CreatedAt >= _resolutionCacheDuration)
+                     .Select(entry => entry.Key)
+                     .ToArray())
+        {
+            _resolutionCache.Remove(cacheKey);
+        }
+    }
+
+    private void TrimCompletedResolutionCacheLocked()
+    {
+        var completedEntries = _resolutionCache
+            .Where(entry => entry.Value.ResolutionTask.IsCompleted)
+            .OrderBy(entry => entry.Value.CreatedAt)
+            .ToArray();
+        var entriesToRemove = completedEntries.Length - _completedResolutionCacheCapacity;
+        for (var index = 0; index < entriesToRemove; index++)
+        {
+            _resolutionCache.Remove(completedEntries[index].Key);
+        }
+    }
+
+    internal int CachedResolutionCount
+    {
+        get
+        {
+            lock (_resolutionCacheGate)
+                return _resolutionCache.Count;
+        }
+    }
+
+    private async Task ObserveResolutionCompletionAsync(
+        string cacheKey,
+        Task<ResolvedYouTubeMedia> resolutionTask)
+    {
+        try
+        {
+            _ = await resolutionTask.ConfigureAwait(false);
+
+            lock (_resolutionCacheGate)
+                TrimCompletedResolutionCacheLocked();
+        }
+        catch
+        {
+            lock (_resolutionCacheGate)
+            {
+                if (_resolutionCache.TryGetValue(cacheKey, out var cached)
+                    && ReferenceEquals(cached.ResolutionTask, resolutionTask))
+                {
+                    _resolutionCache.Remove(cacheKey);
+                }
+            }
+        }
+    }
+
+    private async Task<ResolvedYouTubeMedia> ResolveMediaAsync(
+        VideoId videoId,
+        CancellationToken cancellationToken)
+    {
         var videoTask = _youtube.Videos.GetAsync(videoId, cancellationToken).AsTask();
         var streamsTask = _youtube.Videos.Streams.GetManifestAsync(videoId, cancellationToken).AsTask();
         await Task.WhenAll(videoTask, streamsTask).ConfigureAwait(false);
@@ -82,34 +288,12 @@ public sealed class YouTubeMediaSourceResolver
         var videoRanges = await videoRangesTask.ConfigureAwait(false);
         var audioRanges = await audioRangesTask.ConfigureAwait(false);
 
-        const string manifestFileName = "youtube.mpd";
-        const string videoFileName = "video.mp4";
-        const string audioFileName = "audio.mp4";
-        var dashManifest = BuildDashManifest(
+        return new ResolvedYouTubeMedia(
             duration.Value,
-            videoFileName,
             videoStream,
             videoRanges,
-            audioFileName,
             audioStream,
             audioRanges);
-
-        var loopback = new LoopbackMediaSession(
-            manifestFileName,
-            dashManifest,
-            [
-                new MediaResource(
-                    videoFileName,
-                    "video/mp4",
-                    videoStream.Size.Bytes,
-                    token => _youtube.Videos.Streams.GetAsync(videoStream, token)),
-                new MediaResource(
-                    audioFileName,
-                    "audio/mp4",
-                    audioStream.Size.Bytes,
-                    token => _youtube.Videos.Streams.GetAsync(audioStream, token)),
-            ]);
-        return new MediaSourceSession(loopback.PlaybackUrl, owner: loopback);
     }
 
     internal IVideoStreamInfo? SelectVideoStream(StreamManifest manifest)
@@ -282,6 +466,18 @@ public sealed class YouTubeMediaSourceResolver
         writer.WriteEndElement();
         writer.WriteEndElement();
     }
+
+    private sealed record CachedResolution(
+        DateTimeOffset CreatedAt,
+        Task<ResolvedYouTubeMedia> ResolutionTask);
+
 }
 
 internal sealed record SegmentBaseRanges(long InitializationEnd, long IndexStart, long IndexEnd);
+
+internal sealed record ResolvedYouTubeMedia(
+    TimeSpan Duration,
+    IVideoStreamInfo VideoStream,
+    SegmentBaseRanges VideoRanges,
+    IAudioStreamInfo AudioStream,
+    SegmentBaseRanges AudioRanges);
