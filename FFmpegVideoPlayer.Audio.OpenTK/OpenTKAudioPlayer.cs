@@ -556,8 +556,7 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
 
     private void UpdatePlaybackClock()
     {
-        var offsetFrames = 0;
-        AL.GetSource(_source, ALGetSourcei.SampleOffset, out offsetFrames);
+        AL.GetSource(_source, ALGetSourcei.SampleOffset, out var offsetFrames);
         if (!LogAlError("query playback offset"))
             offsetFrames = 0;
 

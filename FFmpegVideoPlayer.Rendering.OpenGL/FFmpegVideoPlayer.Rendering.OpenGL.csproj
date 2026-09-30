@@ -14,8 +14,8 @@
     <RootNamespace>FFmpegVideoPlayer.Rendering.OpenGL</RootNamespace>
     <Authors>jojomondag</Authors>
     <Company>jojomondag</Company>
-    <Description>OpenGL-based hardware-accelerated rendering for FFmpegVideoPlayer. Provides OpenGL texture-based video rendering for improved performance.</Description>
-    <PackageTags>ffmpeg;video;player;opengl;hardware;acceleration;rendering;cross-platform</PackageTags>
+    <Description>Legacy renderer for FFmpegVideoPlayer using CPU bitmap rendering.</Description>
+    <PackageTags>ffmpeg;video;player;rendering;cross-platform</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/jojomondag/FFmpegVideoPlayer.Avalonia</PackageProjectUrl>
     <RepositoryUrl>https://github.com/jojomondag/FFmpegVideoPlayer.Avalonia</RepositoryUrl>
@@ -26,12 +26,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Reference Core and Avalonia projects -->
+    <!-- Reference the rendering interface and Avalonia controls. -->
     <ProjectReference Include="..\FFmpegVideoPlayer.Core\FFmpegVideoPlayer.Core.csproj" />
-    <ProjectReference Include="..\Avalonia.FFmpegVideoPlayer.csproj" />
     
-    <!-- OpenTK for OpenGL support -->
-    <PackageReference Include="OpenTK" Version="4.9.4" />
     <PackageReference Include="Avalonia" Version="$(AvaloniaVersion)" />
   </ItemGroup>
 

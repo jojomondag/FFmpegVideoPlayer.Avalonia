@@ -26,7 +26,7 @@ public enum VideoRenderingMode
     Cpu,
 
     /// <summary>
-    /// Hardware-accelerated OpenGL rendering (requires OpenGL support).
+    /// Legacy OpenGL mode, currently using CPU bitmap rendering.
     /// </summary>
     OpenGL
 }
@@ -279,7 +279,7 @@ public partial class VideoPlayerControl : UserControl
     /// <summary>
     /// Gets or sets the video rendering mode.
     /// Cpu: Uses WriteableBitmap (default, backward compatible).
-    /// OpenGL: Uses hardware-accelerated OpenGL rendering (requires OpenGL support).
+    /// OpenGL: Uses the legacy renderer with CPU bitmap rendering.
     /// </summary>
     public VideoRenderingMode RenderingMode
     {

@@ -1,7 +1,0 @@
-﻿<?xml version="1.0" encoding="utf-8" standalone="no"?>
-<Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <ImportGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
-    <Import Project="$(NuGetPackageRoot)avalonia.buildservices\11.3.2\buildTransitive\Avalonia.BuildServices.targets" Condition="Exists('$(NuGetPackageRoot)avalonia.buildservices\11.3.2\buildTransitive\Avalonia.BuildServices.targets')" />
-    <Import Project="$(NuGetPackageRoot)avalonia\12.0.4\buildTransitive\Avalonia.targets" Condition="Exists('$(NuGetPackageRoot)avalonia\12.0.4\buildTransitive\Avalonia.targets')" />
-  </ImportGroup>
-</Project>

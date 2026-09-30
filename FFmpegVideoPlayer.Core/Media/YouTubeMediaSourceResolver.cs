@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,13 +18,15 @@ namespace FFmpegVideoPlayer.Core;
 
 /// <summary>
 /// Resolves a YouTube watch URL into a local DASH manifest consumed by the existing
-/// FFmpeg player. Audio and video remain separate upstream streams and are relayed
-/// in memory over loopback, so no tutorial video is stored on disk.
+/// FFmpeg player. The manifest is served over loopback, while audio and video remain
+/// direct signed YouTube URLs so FFmpeg can perform efficient range reads itself.
 /// </summary>
 public sealed class YouTubeMediaSourceResolver
 {
+    private const int SegmentProbeByteCount = 1024 * 1024;
     private static readonly TimeSpan ResolutionCacheDuration = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan DefaultResolutionTimeout = TimeSpan.FromSeconds(45);
+    private static readonly HttpClient SegmentProbeClient = CreateSegmentProbeClient();
     private const int DefaultCompletedResolutionCacheCapacity = 64;
     private readonly int _preferredMaximumHeight;
     private readonly YoutubeClient _youtube;
@@ -112,32 +116,20 @@ public sealed class YouTubeMediaSourceResolver
         var resolution = await GetResolutionAsync(videoId, cancellationToken).ConfigureAwait(false);
 
         const string manifestFileName = "youtube.mpd";
-        const string videoFileName = "video.mp4";
-        const string audioFileName = "audio.mp4";
         var dashManifest = BuildDashManifest(
             resolution.Duration,
-            videoFileName,
+            resolution.VideoStream.Url,
             resolution.VideoStream,
             resolution.VideoRanges,
-            audioFileName,
+            resolution.AudioStream.Url,
             resolution.AudioStream,
             resolution.AudioRanges);
 
-        var loopback = new LoopbackMediaSession(
-            manifestFileName,
-            dashManifest,
-            [
-                new MediaResource(
-                    videoFileName,
-                    "video/mp4",
-                    resolution.VideoStream.Size.Bytes,
-                    token => _youtube.Videos.Streams.GetAsync(resolution.VideoStream, token)),
-                new MediaResource(
-                    audioFileName,
-                    "audio/mp4",
-                    resolution.AudioStream.Size.Bytes,
-                    token => _youtube.Videos.Streams.GetAsync(resolution.AudioStream, token)),
-            ]);
+        // Only the manifest is served locally. The signed YouTube media URLs are
+        // placed directly in BaseURL so FFmpeg can issue its own range requests and
+        // keep the upstream HTTP connection alive instead of reopening a proxy stream
+        // for every range request.
+        var loopback = new LoopbackMediaSession(manifestFileName, dashManifest, []);
         return new MediaSourceSession(loopback.PlaybackUrl, owner: loopback);
     }
 
@@ -314,10 +306,16 @@ public sealed class YouTubeMediaSourceResolver
             .ToArray();
         var candidates = preferred.Length > 0 ? preferred : compatible;
 
+        var nativeCandidates = candidates
+            .Where(stream => !stream.IsVideoUpscaled)
+            .ToArray();
+        if (nativeCandidates.Length > 0)
+            candidates = nativeCandidates;
+
         return candidates
-            .OrderByDescending(stream => stream.VideoResolution.Area)
-            .ThenByDescending(stream => stream.VideoQuality.Framerate)
+            .OrderByDescending(stream => stream.VideoResolution.Height)
             .ThenByDescending(stream => stream.Bitrate.BitsPerSecond)
+            .ThenByDescending(stream => stream.VideoQuality.Framerate)
             .FirstOrDefault();
     }
 
@@ -331,10 +329,10 @@ public sealed class YouTubeMediaSourceResolver
 
     internal static string BuildDashManifest(
         TimeSpan duration,
-        string videoFileName,
+        string videoBaseUrl,
         IVideoStreamInfo video,
         SegmentBaseRanges videoRanges,
-        string audioFileName,
+        string audioBaseUrl,
         IAudioStreamInfo audio,
         SegmentBaseRanges audioRanges)
     {
@@ -368,7 +366,7 @@ public sealed class YouTubeMediaSourceResolver
         writer.WriteAttributeString("width", video.VideoResolution.Width.ToString(CultureInfo.InvariantCulture));
         writer.WriteAttributeString("height", video.VideoResolution.Height.ToString(CultureInfo.InvariantCulture));
         writer.WriteAttributeString("frameRate", video.VideoQuality.Framerate.ToString(CultureInfo.InvariantCulture));
-        WriteSegmentBase(writer, dashNamespace, videoFileName, videoRanges);
+        WriteSegmentBase(writer, dashNamespace, videoBaseUrl, videoRanges);
         writer.WriteEndElement();
         writer.WriteEndElement();
 
@@ -381,7 +379,7 @@ public sealed class YouTubeMediaSourceResolver
         writer.WriteAttributeString("bandwidth", audio.Bitrate.BitsPerSecond.ToString(CultureInfo.InvariantCulture));
         writer.WriteAttributeString("mimeType", "audio/mp4");
         writer.WriteAttributeString("codecs", audio.AudioCodec);
-        WriteSegmentBase(writer, dashNamespace, audioFileName, audioRanges);
+        WriteSegmentBase(writer, dashNamespace, audioBaseUrl, audioRanges);
         writer.WriteEndElement();
         writer.WriteEndElement();
 
@@ -396,10 +394,72 @@ public sealed class YouTubeMediaSourceResolver
         IStreamInfo streamInfo,
         CancellationToken cancellationToken)
     {
+        var probedRanges = await TryProbeSegmentBaseRangesAsync(streamInfo, cancellationToken)
+            .ConfigureAwait(false);
+        if (probedRanges is not null)
+            return probedRanges;
+
+        // Some CDN responses ignore Range. Keep the existing YoutubeExplode
+        // implementation as a compatibility fallback for those streams.
         await using var stream = await _youtube.Videos.Streams
             .GetAsync(streamInfo, cancellationToken)
             .ConfigureAwait(false);
         return await FindSegmentBaseRangesAsync(stream, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async ValueTask<SegmentBaseRanges?> TryProbeSegmentBaseRangesAsync(
+        IStreamInfo streamInfo,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, streamInfo.Url);
+        request.Headers.Range = new RangeHeaderValue(0, SegmentProbeByteCount - 1);
+
+        using var response = await SegmentProbeClient
+            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            return null;
+
+        var rangeStart = response.Content.Headers.ContentRange?.From;
+        if (rangeStart is not null && rangeStart.Value != 0)
+            return null;
+
+        await using var responseStream = await response.Content
+            .ReadAsStreamAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var probe = new MemoryStream(SegmentProbeByteCount);
+        var buffer = new byte[64 * 1024];
+        while (probe.Length < SegmentProbeByteCount)
+        {
+            var read = await responseStream.ReadAsync(
+                    buffer.AsMemory(0, (int)Math.Min(buffer.Length, SegmentProbeByteCount - probe.Length)),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (read == 0)
+                break;
+            await probe.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+        }
+
+        probe.Position = 0;
+        try
+        {
+            return await FindSegmentBaseRangesAsync(probe, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is InvalidDataException or EndOfStreamException)
+        {
+            return null;
+        }
+    }
+
+    private static HttpClient CreateSegmentProbeClient()
+    {
+        var client = new HttpClient
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36");
+        return client;
     }
 
     internal static async ValueTask<SegmentBaseRanges> FindSegmentBaseRangesAsync(
@@ -450,10 +510,10 @@ public sealed class YouTubeMediaSourceResolver
     private static void WriteSegmentBase(
         XmlWriter writer,
         string dashNamespace,
-        string fileName,
+        string baseUrl,
         SegmentBaseRanges ranges)
     {
-        writer.WriteElementString("BaseURL", dashNamespace, fileName);
+        writer.WriteElementString("BaseURL", dashNamespace, baseUrl);
         writer.WriteStartElement("SegmentBase", dashNamespace);
         writer.WriteAttributeString(
             "indexRange",

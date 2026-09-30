@@ -1,6 +1,5 @@
 using System;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -10,11 +9,8 @@ using FFmpegVideoPlayer.Core;
 namespace Avalonia.FFmpegVideoPlayer;
 
 /// <summary>
-/// OpenGL-based hardware-accelerated video renderer.
-/// Uses OpenGL textures to render video frames directly, eliminating CPU->GPU->CPU->GPU copies.
-/// 
-/// NOTE: This is a placeholder implementation. For full OpenGL support, use the optional
-/// FFmpegVideoPlayer.Rendering.OpenGL package which provides OpenTK-based rendering.
+/// CPU bitmap renderer retained for compatibility with the OpenGL rendering mode.
+/// This implementation does not create an OpenGL context.
 /// </summary>
 public class OpenGLVideoRenderer : Control, IVideoRenderer
 {
@@ -74,9 +70,8 @@ public class OpenGLVideoRenderer : Control, IVideoRenderer
     public OpenGLVideoRenderer()
     {
         ClipToBounds = true;
-        // Note: Full OpenGL implementation requires OpenTK and platform-specific setup
-        // This is a fallback implementation that uses CPU rendering
-        Debug.WriteLine("[OpenGLVideoRenderer] Using fallback CPU rendering. Install FFmpegVideoPlayer.Rendering.OpenGL for full OpenGL support.");
+        RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.HighQuality);
+        Debug.WriteLine("[OpenGLVideoRenderer] Using CPU bitmap rendering.");
     }
 
     private void UpdateFallbackBitmap()
@@ -95,7 +90,6 @@ public class OpenGLVideoRenderer : Control, IVideoRenderer
 
     public void RenderFrame(IntPtr frameData, int width, int height, int stride)
     {
-        // Fallback to CPU rendering - full OpenGL implementation requires OpenTK package
         if (frameData == IntPtr.Zero || width <= 0 || height <= 0)
             return;
 

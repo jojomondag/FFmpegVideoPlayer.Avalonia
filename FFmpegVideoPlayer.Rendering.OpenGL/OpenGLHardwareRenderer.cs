@@ -1,6 +1,6 @@
 using System;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -10,21 +10,13 @@ using FFmpegVideoPlayer.Core;
 namespace FFmpegVideoPlayer.Rendering.OpenGL;
 
 /// <summary>
-/// Hardware-accelerated OpenGL video renderer using OpenTK.
-/// Renders video frames directly to OpenGL textures, eliminating CPU->GPU->CPU->GPU copies.
+/// Legacy renderer that currently renders frames through a CPU bitmap.
+/// The class name is retained for compatibility; no OpenGL context is created.
 /// </summary>
 public class OpenGLHardwareRenderer : Control, IVideoRenderer
 {
-    private int _textureId;
-    private int _shaderProgram;
-    private int _vertexBuffer;
-    private int _vertexArray;
-    private int _uniformTexture;
-    private int _uniformTransform;
-    private bool _isInitialized;
     private int _videoWidth;
     private int _videoHeight;
-    private readonly object _lock = new();
     private WriteableBitmap? _fallbackBitmap; // Fallback if OpenGL not available
 
     /// <summary>
@@ -62,8 +54,7 @@ public class OpenGLHardwareRenderer : Control, IVideoRenderer
     public OpenGLHardwareRenderer()
     {
         ClipToBounds = true;
-        // Note: Full OpenGL initialization requires platform-specific setup
-        // This implementation provides a foundation that can be extended
+        RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.HighQuality);
     }
 
     private void UpdateTextureSize()
@@ -72,21 +63,11 @@ public class OpenGLHardwareRenderer : Control, IVideoRenderer
         InvalidateVisual();
     }
 
-    private void InitializeOpenGL()
-    {
-        // OpenGL initialization would go here
-        // This requires platform-specific context creation which is complex
-        // For now, we use fallback CPU rendering
-        _isInitialized = false;
-    }
-
     public void RenderFrame(IntPtr frameData, int width, int height, int stride)
     {
         if (frameData == IntPtr.Zero || width <= 0 || height <= 0)
             return;
 
-        // For now, use optimized CPU rendering
-        // Full OpenGL implementation requires platform-specific OpenGL context setup
         RenderFrameCPU(frameData, width, height, stride);
     }
 
@@ -190,11 +171,6 @@ public class OpenGLHardwareRenderer : Control, IVideoRenderer
 
     public void Dispose()
     {
-        if (_isInitialized)
-        {
-            // Cleanup OpenGL resources would go here
-            _isInitialized = false;
-        }
         _fallbackBitmap = null;
     }
 }

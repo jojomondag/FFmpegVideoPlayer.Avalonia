@@ -12,7 +12,7 @@ seekable streams, DASH manifests and YouTube URLs.
 ## Install
 
 ```bash
-dotnet add package FFmpegVideoPlayer.Avalonia --version 3.0.2
+dotnet add package FFmpegVideoPlayer.Avalonia --version 3.0.3
 ```
 
 Version 3 requires **Avalonia 12.1.0+ (below 13)** and **.NET 8+**. The single
@@ -24,6 +24,11 @@ FFmpeg 8.1.2 DLLs are bundled **only for Windows x64**. Windows x86/ARM64, macOS
 and Linux require a compatible system FFmpeg installation or an explicitly supplied
 native-library path. OpenAL Soft audio DLLs are bundled separately for Windows x64,
 x86, and ARM64.
+
+YouTube video and audio are kept as separate adaptive streams, but FFmpeg reads the
+signed media URLs directly with HTTP range requests. This avoids downloading the same
+startup ranges through an intermediate proxy and preserves the selected stream's full
+quality.
 
 ## Quick start
 

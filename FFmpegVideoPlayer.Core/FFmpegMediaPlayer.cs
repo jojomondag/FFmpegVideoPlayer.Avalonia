@@ -103,7 +103,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
     private SwrContext* _swrContext;
     private const int MaxPendingFrames = 4;
     private readonly PendingFrameTracker _pendingFrames = new(MaxPendingFrames);
-    private int _droppedFrames;
     private long _mediaGeneration;
     private long _timelineGeneration;
     
@@ -113,8 +112,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
     private double _audioStartPts; // First audio frame's PTS (for audio-video sync)
     private bool _hasAudioClock; // True after timestamped PCM has reached the audio backend
     private bool _needsResync; // Flag to trigger resync after seek
-    private double _audioClock; // Current audio playback time (in seconds)
-    private double _videoClock; // Current video presentation time (in seconds)
     private AVRational _videoTimeBase;
     private AVRational _audioTimeBase;
     private Stopwatch? _playbackStopwatch;
@@ -413,8 +410,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
             // Clear logs when opening a new movie
             _logger.Clear();
             _logger.Log("FFmpegMediaPlayer", "MediaLoadingStarted", new { DisplayName = displayName });
-            
-            _droppedFrames = 0;
 
             _logger.Log("FFmpegMediaPlayer", "OpeningMedia", new { DisplayName = displayName });
 
@@ -557,7 +552,10 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
             for (int i = 0; i < _formatContext->nb_streams; i++)
             {
                 var codecType = _formatContext->streams[i]->codecpar->codec_type;
-                if (codecType == AVMediaType.AVMEDIA_TYPE_VIDEO && _videoStreamIndex < 0)
+                // Embedded album art is a still image, not a playback video stream.
+                // Keep audio with cover art on the audio-only playback path.
+                if (codecType == AVMediaType.AVMEDIA_TYPE_VIDEO && _videoStreamIndex < 0
+                    && (_formatContext->streams[i]->disposition & ffmpeg.AV_DISPOSITION_ATTACHED_PIC) == 0)
                 {
                     _videoStreamIndex = i;
                     _logger.Log("FFmpegMediaPlayer", "VideoStreamFound", new { StreamIndex = i });
@@ -694,14 +692,11 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                 return false;
             }
 
-            _droppedFrames = 0;
             _startTime = 0;
             _playbackStartWallTime = 0;
             _audioStartPts = 0;
             _hasAudioClock = false;
             _needsResync = true;
-            _audioClock = 0;
-            _videoClock = 0;
             _totalPauseTime = 0;
             _pauseStartTime = 0;
             _seekTargetPts = -1;
@@ -1002,11 +997,17 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
         _rgbFrame->linesize[2] = linesizePtr[2];
         _rgbFrame->linesize[3] = linesizePtr[3];
 
-        // Initialize scaler
+        // Use bicubic chroma upsampling instead of bilinear conversion. The
+        // output dimensions stay native, so this mainly improves colour/detail
+        // reconstruction while keeping the per-frame cost reasonable.
+        var scalerFlags = (int)(
+            SwsFlags.SWS_BICUBIC
+            | SwsFlags.SWS_FULL_CHR_H_INT
+            | SwsFlags.SWS_ACCURATE_RND);
         _swsContext = ffmpeg.sws_getContext(
             _videoWidth, _videoHeight, _videoCodecContext->pix_fmt,
             _videoWidth, _videoHeight, AVPixelFormat.AV_PIX_FMT_BGRA,
-            (int)SwsFlags.SWS_BILINEAR, null, null, null);
+            scalerFlags, null, null, null);
 
         return _swsContext != null;
     }
@@ -1303,8 +1304,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
             _audioStartPts = 0;
             _hasAudioClock = false;
             _needsResync = true;
-            _audioClock = 0;
-            _videoClock = 0;
             _totalPauseTime = 0;
             _pauseStartTime = 0;
             _seekTargetPts = -1;
@@ -1374,8 +1373,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
             _audioStartPts = 0;
             _hasAudioClock = false;
             _needsResync = true; // Flag to update audio start PTS on next frame
-            _audioClock = 0;
-            _videoClock = 0;
             _totalPauseTime = 0;
             _pauseStartTime = 0;
             _position = targetSec;
@@ -1527,8 +1524,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
 
                             // Reset position state
                             _position = 0;
-                            _videoClock = 0;
-                            _audioClock = 0;
                             _hasAudioClock = false;
                             _lastFramePts = -1;
                             _needsResync = true;
@@ -1618,7 +1613,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
         // Convert PTS to seconds
         var frameTime = pts * _videoTimeBase.num / (double)_videoTimeBase.den;
         
-        _videoClock = frameTime;
         _position = frameTime;
         _lastFramePts = frameTime;
 
@@ -1773,7 +1767,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                     timelineGeneration: TimelineGeneration);
                 
                 _position = previousFrame.Pts;
-                _videoClock = previousFrame.Pts;
                 _lastFramePts = previousFrame.Pts;
                 
                 DispatchFrameAndPosition(eventArgs, Position);
@@ -1814,8 +1807,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                 _audioStartPts = 0;
                 _hasAudioClock = false;
                 _needsResync = true;
-                _audioClock = 0;
-                _videoClock = 0;
                 // StepBackward manages its own target via the decode-forward loop below,
                 // so make sure a pending Seek target can't interfere.
                 _seekTargetPts = -1;
@@ -1850,7 +1841,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                 {
                     // If we couldn't decode, just seek and show the keyframe
                     _position = targetPts;
-                    _videoClock = targetPts;
                     _lastFramePts = targetPts;
                 }
                 
@@ -1870,7 +1860,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         double firstFramePts = double.NaN; // Will be set when first frame is processed
         double lastVideoPts = 0; // Last displayed video frame PTS
-        double lastAudioPts = 0; // Last processed audio frame PTS
         lock (_lock)
         {
             _playbackStopwatch = stopwatch;
@@ -1969,8 +1958,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                                 {
                                     ProcessAudioPacket(
                                         stopwatch,
-                                        firstFramePts,
-                                        ref lastAudioPts,
                                         token,
                                         _packet);
                                     audioPacketsProcessed++;
@@ -2003,7 +1990,7 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                 // Minimal sleep only if we processed packets, to prevent CPU spinning
                 if (packetsThisIteration > 0 && !endOfFile)
                 {
-                    UpdateAudioOnlyPositionFromPlaybackClock(stopwatch);
+                    UpdateAudioOnlyPositionFromPlaybackClock();
                     Thread.Sleep(1);
                 }
             }
@@ -2012,11 +1999,11 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
             {
                 lock (_lock)
                 {
-                    FlushAudioPipeline(stopwatch, firstFramePts, ref lastAudioPts, token);
+                    FlushAudioPipeline(stopwatch, token);
                     _audioPlayer?.CompleteInput();
                 }
 
-                WaitForAudioPlaybackToDrain(token, stopwatch);
+                WaitForAudioPlaybackToDrain(token);
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -2079,7 +2066,7 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
         }
     }
 
-    private void WaitForAudioPlaybackToDrain(CancellationToken token, Stopwatch stopwatch)
+    private void WaitForAudioPlaybackToDrain(CancellationToken token)
     {
         var audioPlayer = _audioPlayer;
         if (audioPlayer == null)
@@ -2111,10 +2098,10 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                 continue;
             }
 
-            var playedPosition = UpdateAudioOnlyPositionFromPlaybackClock(stopwatch);
+            UpdateAudioOnlyPositionFromPlaybackClock();
 
             if (_videoStreamIndex < 0)
-                UpdateAudioOnlyPositionFromPlaybackClock(stopwatch);
+                UpdateAudioOnlyPositionFromPlaybackClock();
 
             if (token.WaitHandle.WaitOne(10))
                 break;
@@ -2127,10 +2114,10 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
         });
     }
 
-    private double UpdateAudioOnlyPositionFromPlaybackClock(Stopwatch stopwatch)
+    private void UpdateAudioOnlyPositionFromPlaybackClock()
     {
         if (_videoStreamIndex >= 0 || _audioPlayer == null)
-            return _position;
+            return;
 
         var playedPosition = _audioStartPts + Math.Max(0, _audioPlayer.GetPlaybackTime());
         _position = _duration > 0
@@ -2155,7 +2142,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
         else
             RaisePositionIfCurrent();
 
-        return playedPosition;
     }
 
     /// <summary>
@@ -2183,7 +2169,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
         if (!PlaybackTiming.TryComposeAudioMediaClock(_audioStartPts, playbackTime, out mediaClock))
             return false;
 
-        _audioClock = mediaClock;
         return true;
     }
 
@@ -2385,7 +2370,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                     if (timing.Decision.Action == VideoTimingAction.Drop)
                     {
                         lastVideoPts = frameTime;
-                        Interlocked.Increment(ref _droppedFrames);
                         continue;
                     }
                     lastVideoPts = frameTime;
@@ -2399,7 +2383,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                 // Check pending frames
                 if (!_pendingFrames.TryAcquire(out pendingFrameLease))
                 {
-                    Interlocked.Increment(ref _droppedFrames);
                     continue;
                 }
 
@@ -2509,15 +2492,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                     frameTimelineGeneration)
                 || timing.Decision.Action == VideoTimingAction.Drop)
             {
-                if (!cancellationToken.IsCancellationRequested
-                    && IsFrameGenerationCurrent(
-                        frameMediaGeneration,
-                        frameTimelineGeneration)
-                    && timing.Decision.Action == VideoTimingAction.Drop)
-                {
-                    Interlocked.Increment(ref _droppedFrames);
-                }
-
                 ReleasePendingFrame(eventArgs, pendingFrameLease!);
                 continue;
             }
@@ -2536,7 +2510,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                     continue;
                 }
 
-                _videoClock = frameTime;
                 _position = frameTime;
                 _lastFramePts = frameTime;
 
@@ -2565,8 +2538,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
 
     private void ProcessAudioPacket(
         Stopwatch stopwatch,
-        double firstFramePts,
-        ref double lastAudioPts,
         CancellationToken cancellationToken,
         AVPacket* packet)
     {
@@ -2609,14 +2580,10 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                     if (_seekTargetPts >= 0 && audioTime + SeekTargetEpsilon < _seekTargetPts)
                         continue;
 
-                    // Track audio clock
-                    _audioClock = audioTime;
-
                     // A decoded timestamp is only a candidate clock origin. The clock
                     // becomes valid below, after the corresponding PCM reaches the backend.
                     if (!_hasAudioClock)
                     {
-                        lastAudioPts = audioTime;
                         _audioStartPts = audioTime;
                         establishesAudioClock = true;
                         if (_videoStreamIndex < 0)
@@ -2711,53 +2678,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
         }
     }
 
-    private void ConvertAudioSamples(AVFrame* frame, float[] output, int samples, int channels, AVSampleFormat format)
-    {
-        int outputIndex = 0;
-        
-        for (int s = 0; s < samples; s++)
-        {
-            for (int c = 0; c < channels; c++)
-            {
-                float value = 0f;
-                uint sampleIndex = (uint)(s * channels + c);
-                uint channelIndex = (uint)c;
-                uint planarIndex = (uint)s;
-                
-                switch (format)
-                {
-                    case AVSampleFormat.AV_SAMPLE_FMT_FLT:
-                        value = ((float*)frame->data[0])[sampleIndex];
-                        break;
-                    case AVSampleFormat.AV_SAMPLE_FMT_FLTP:
-                        value = ((float*)frame->data[channelIndex])[planarIndex];
-                        break;
-                    case AVSampleFormat.AV_SAMPLE_FMT_S16:
-                        value = ((short*)frame->data[0])[sampleIndex] / 32768f;
-                        break;
-                    case AVSampleFormat.AV_SAMPLE_FMT_S16P:
-                        value = ((short*)frame->data[channelIndex])[planarIndex] / 32768f;
-                        break;
-                    case AVSampleFormat.AV_SAMPLE_FMT_S32:
-                        value = ((int*)frame->data[0])[sampleIndex] / 2147483648f;
-                        break;
-                    case AVSampleFormat.AV_SAMPLE_FMT_S32P:
-                        value = ((int*)frame->data[channelIndex])[planarIndex] / 2147483648f;
-                        break;
-                    default:
-                        // Try to handle as planar float
-                        if (frame->data[channelIndex] != null)
-                        {
-                            value = ((float*)frame->data[channelIndex])[planarIndex];
-                        }
-                        break;
-                }
-                
-                output[outputIndex++] = Math.Clamp(value, -1f, 1f);
-            }
-        }
-    }
-
     private void CloseInternal()
     {
         // Invalidate frame callbacks already queued for the source being closed.
@@ -2832,14 +2752,11 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
         _audioStreamIndex = -1;
         _position = 0;
         _duration = 0;
-        _droppedFrames = 0;
         _startTime = 0;
         _playbackStartWallTime = 0;
         _audioStartPts = 0;
         _hasAudioClock = false;
         _needsResync = true;
-        _audioClock = 0;
-        _videoClock = 0;
         _totalPauseTime = 0;
         _pauseStartTime = 0;
         _playbackStopwatch = null;
@@ -2902,8 +2819,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
 
     private void FlushAudioPipeline(
         Stopwatch stopwatch,
-        double firstFramePts,
-        ref double lastAudioPts,
         CancellationToken cancellationToken)
     {
         if (_audioPlayer == null || _audioCodecContext == null)
@@ -2912,8 +2827,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
         // A null packet tells FFmpeg to emit delayed codec frames.
         ProcessAudioPacket(
             stopwatch,
-            firstFramePts,
-            ref lastAudioPts,
             cancellationToken,
             null);
 

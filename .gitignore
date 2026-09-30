@@ -4,6 +4,7 @@
 [Oo]ut/
 [Ll]og/
 [Ll]ogs/
+artifacts/
 
 # NuGet Packages
 *.nupkg

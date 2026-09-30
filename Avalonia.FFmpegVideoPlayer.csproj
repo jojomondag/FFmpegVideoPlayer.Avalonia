@@ -14,7 +14,7 @@
     <Authors>jojomondag</Authors>
     <Company>jojomondag</Company>
     <Description>Standalone FFmpeg media player for Avalonia 12. Bundles FFmpeg for Windows x64; other OS/architectures use a compatible system FFmpeg installation.</Description>
-    <PackageReleaseNotes>v3.0.2: Updates the bundled Windows x64 FFmpeg libraries to 8.1.2 and suppresses the split, non-fatal Late SEI decoder diagnostic. Also includes the playback timing, first-frame, YouTube caching, and lifecycle fixes from the 3.0.0 development cycle.</PackageReleaseNotes>
+    <PackageReleaseNotes>v3.0.3: Preserves real-time audio playback for MP3 files with embedded cover art (thanks coolguru81, PR #6). Improves YouTube resolution caching and video scaling quality, removes unused code and build artifacts, and corrects legacy renderer descriptions. Includes the Avalonia 12 standalone player and FFmpeg 8.1.2 updates.</PackageReleaseNotes>
     <PackageTags>avalonia;ffmpeg;video;audio;player;media;cross-platform;windows-x64;system-ffmpeg</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/jojomondag/FFmpegVideoPlayer.Avalonia</PackageProjectUrl>
@@ -40,12 +40,6 @@
     <AvaloniaXaml Remove="tests/**/*.axaml" />
     <AvaloniaResource Remove="tests/**/*" />
     <None Remove="tests/**/*" />
-    <!-- Remove Core files - they're now in the Core project -->
-    <Compile Remove="AudioPlayer.cs" />
-    <Compile Remove="FFmpegInitializer.cs" />
-    <Compile Remove="FFmpegMediaPlayer.cs" />
-    <Compile Remove="FFmpegPathResolver.cs" />
-    <Compile Remove="PlayerLogger.cs" />
     <!-- Remove Core project files - they're in a separate project -->
     <Compile Remove="FFmpegVideoPlayer.Core/**/*.cs" />
     <!-- Remove Audio.OpenTK files - they're in a separate optional package -->

@@ -7,16 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.3] - 2026-09-30
+
 ### Added
 - Added `YouTubeMediaSourceResolver.PreloadAsync` with coalesced, short-lived resolution caching for known remote videos.
 - Added `VideoPlayerControl.FirstFramePresented`, raised once after the active source has rendered its first frame.
 
 ### Fixed
+- Embedded album art is excluded when selecting the video stream, preserving real-time playback for MP3 and other audio-only files (thanks @coolguru81, PR #6).
+- YouTube playback now lets FFmpeg range-read the signed media URLs directly instead of reopening a loopback proxy stream for every request, reducing startup and seek latency.
+- Video stream selection now prefers native resolution and bitrate, while CPU/OpenGL renderers use high-quality bitmap interpolation and bicubic chroma conversion to reduce pixelation when scaling.
 - Updated the bundled Windows x64 FFmpeg libraries to the FFmpeg 8.1.2 release branch and filtered the split, non-fatal `Late SEI is not implemented` decoder diagnostic.
 - Autoplay no longer decodes and seeks back over the first frame before playback, avoiding a duplicate network read for YouTube sources.
 - Video presentation now follows the audio backend clock when available. Audio-master waits use bounded retry/drop thresholds after stalls, while video-only playback follows a pause-aware wall clock until a frame is due.
 - Seeks, stops, and source replacements now invalidate decoded and queued callbacks from the previous timeline without corrupting pending-frame accounting.
 - YouTube resolution caching retains all in-flight requests for coalescing, bounds completed entries, prunes expired results, and applies a cache-owned timeout.
+
+### Changed
+- Removed unused private state, audio conversion code, parameters, dependencies and checked-in build artifacts; generated artifacts are now ignored.
+- Corrected legacy OpenGL renderer descriptions to reflect their CPU bitmap implementation while preserving public APIs.
 
 ## [2.9.0] - 2026-05-29
 

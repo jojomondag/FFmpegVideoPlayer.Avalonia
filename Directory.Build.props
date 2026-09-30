@@ -1,9 +1,18 @@
 <Project>
   <PropertyGroup>
-    <Version>3.0.2</Version>
+    <Version>3.0.3</Version>
     <AvaloniaVersion>12.1.0</AvaloniaVersion>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Keep generated verification/build output out of SDK default items. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);artifacts\**</DefaultItemExcludes>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="artifacts\**" />
+    <EmbeddedResource Remove="artifacts\**" />
+    <None Remove="artifacts\**" />
+    <Content Remove="artifacts\**" />
+  </ItemGroup>
 </Project>

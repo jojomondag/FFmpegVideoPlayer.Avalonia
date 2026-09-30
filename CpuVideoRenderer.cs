@@ -1,7 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
 using Avalonia.Controls;
-using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -72,6 +71,9 @@ public class CpuVideoRenderer : Control, IVideoRenderer
     {
         // Set up control to display bitmap
         ClipToBounds = true;
+        // Use a high-quality filter when the native frame is scaled to the
+        // control bounds; the default filter can make enlarged video look blocky.
+        RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.HighQuality);
     }
 
     private void UpdateBitmap()

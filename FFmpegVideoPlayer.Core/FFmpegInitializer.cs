@@ -203,7 +203,7 @@ public static class FFmpegInitializer
             // already have a working FFmpeg path.
             if (string.IsNullOrEmpty(_ffmpegPath) && string.IsNullOrEmpty(customPath))
             {
-                var discovered = FindFFmpegPath(null);
+                var discovered = FindFFmpegPath();
                 if (!string.IsNullOrEmpty(discovered))
                 {
                     FFmpegPathResolver.ConfigureNativeSearchPath(discovered);
@@ -227,7 +227,7 @@ public static class FFmpegInitializer
 
                 if (TryInstallFFmpegOnMacOS())
                 {
-                    var discovered = FindFFmpegPath(null);
+                    var discovered = FindFFmpegPath();
                     if (!string.IsNullOrEmpty(discovered))
                     {
                         FFmpegPathResolver.ConfigureNativeSearchPath(discovered);
@@ -250,7 +250,7 @@ public static class FFmpegInitializer
 
                 if (TryInstallFFmpegOnLinux())
                 {
-                    var discovered = FindFFmpegPath(null);
+                    var discovered = FindFFmpegPath();
                     if (!string.IsNullOrEmpty(discovered))
                     {
                         FFmpegPathResolver.ConfigureNativeSearchPath(discovered);
@@ -726,7 +726,7 @@ After installation, restart your terminal/IDE.";
 
         try
         {
-            var path = FindFFmpegPath(null);
+            var path = FindFFmpegPath();
             if (!string.IsNullOrEmpty(path))
             {
                 status.IsInstalled = true;
@@ -763,7 +763,7 @@ After installation, restart your terminal/IDE.";
 
     #region Path Discovery
 
-    private static string? FindFFmpegPath(string? customPath)
+    private static string? FindFFmpegPath()
     {
         // Note: Custom path and bundled FFmpeg are now handled in Initialize() method
         // This method is only called for system discovery fallback

@@ -26,11 +26,27 @@ public sealed class YouTubeMediaSourceResolverTests
     }
 
     [Fact]
+    public void Prefers_bitrate_over_frame_rate_at_the_same_resolution()
+    {
+        var manifest = new StreamManifest([
+            Video("h264-1080-60", Container.Mp4, "avc1.640028", 1080, 60, 5_000_000),
+            Video("h264-1080-high-bitrate", Container.Mp4, "avc1.640028", 1080, 30, 8_000_000),
+        ]);
+
+        var selected = new YouTubeMediaSourceResolver(1080).SelectVideoStream(manifest);
+
+        Assert.NotNull(selected);
+        Assert.Equal("h264-1080-high-bitrate", selected.Url);
+    }
+
+    [Fact]
     public void Dash_manifest_combines_video_and_audio_as_one_ffmpeg_source()
     {
-        var video = Video("video.mp4", Container.Mp4, "avc1.640028", 1080, 30, 5_000_000);
+        const string videoUrl = "https://cdn.example/video.mp4?sig=a&range=0-10";
+        const string audioUrl = "https://cdn.example/audio.mp4?sig=b&range=0-10";
+        var video = Video(videoUrl, Container.Mp4, "avc1.640028", 1080, 30, 5_000_000);
         var audio = new AudioOnlyStreamInfo(
-            "audio.m4a",
+            audioUrl,
             Container.Mp4,
             new FileSize(1_000_000),
             new Bitrate(160_000),
@@ -40,10 +56,10 @@ public sealed class YouTubeMediaSourceResolverTests
 
         var xml = YouTubeMediaSourceResolver.BuildDashManifest(
             TimeSpan.FromMinutes(3),
-            "video.mp4",
+            videoUrl,
             video,
             new SegmentBaseRanges(740, 741, 1288),
-            "audio.mp4",
+            audioUrl,
             audio,
             new SegmentBaseRanges(722, 723, 1030));
         var document = XDocument.Parse(xml);
@@ -54,7 +70,7 @@ public sealed class YouTubeMediaSourceResolverTests
         Assert.Contains(adaptationSets, set => (string?)set.Attribute("contentType") == "video");
         Assert.Contains(adaptationSets, set => (string?)set.Attribute("contentType") == "audio");
         Assert.Equal(
-            new[] { "video.mp4", "audio.mp4" },
+            new[] { videoUrl, audioUrl },
             document.Descendants(dash + "BaseURL").Select(element => element.Value));
         Assert.Equal(
             new[] { "741-1288", "723-1030" },
