@@ -551,11 +551,20 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
             // Find video and audio streams
             for (int i = 0; i < _formatContext->nb_streams; i++)
             {
-                var codecType = _formatContext->streams[i]->codecpar->codec_type;
-                // Embedded album art is a still image, not a playback video stream.
-                // Keep audio with cover art on the audio-only playback path.
-                if (codecType == AVMediaType.AVMEDIA_TYPE_VIDEO && _videoStreamIndex < 0
-                    && (_formatContext->streams[i]->disposition & ffmpeg.AV_DISPOSITION_ATTACHED_PIC) == 0)
+                var stream = _formatContext->streams[i];
+                var codecType = stream->codecpar->codec_type;
+
+                // Embedded cover art (ID3 APIC / MP4 "covr" etc.) is exposed by FFmpeg as a
+                // single-frame AVMEDIA_TYPE_VIDEO stream flagged AV_DISPOSITION_ATTACHED_PIC.
+                // Treating it as real video pulls the player out of the audio-only code path
+                // (WaitForAudioOnlyPlaybackToFinish / UpdateAudioOnlyPositionFromPlaybackClock
+                // both bail out whenever _videoStreamIndex >= 0), which removes all real-time
+                // pacing and lets decode race through the whole file in well under a second.
+                // Most tagged mp3s carry embedded artwork, so skip attached-picture streams
+                // when picking the playback video stream.
+                bool isAttachedPic = (stream->disposition & ffmpeg.AV_DISPOSITION_ATTACHED_PIC) != 0;
+
+                if (codecType == AVMediaType.AVMEDIA_TYPE_VIDEO && !isAttachedPic && _videoStreamIndex < 0)
                 {
                     _videoStreamIndex = i;
                     _logger.Log("FFmpegMediaPlayer", "VideoStreamFound", new { StreamIndex = i });
@@ -564,6 +573,10 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                 {
                     _audioStreamIndex = i;
                     _logger.Log("FFmpegMediaPlayer", "AudioStreamFound", new { StreamIndex = i });
+                }
+                else if (codecType == AVMediaType.AVMEDIA_TYPE_VIDEO && isAttachedPic)
+                {
+                    _logger.Log("FFmpegMediaPlayer", "AttachedPictureStreamSkipped", new { StreamIndex = i });
                 }
             }
 
