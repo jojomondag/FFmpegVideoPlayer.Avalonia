@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <IsPackable>false</IsPackable>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
@@ -11,7 +12,6 @@
     <PackageId>FFmpegVideoPlayer.Rendering.OpenGL</PackageId>
     <AssemblyName>FFmpegVideoPlayer.Rendering.OpenGL</AssemblyName>
     <RootNamespace>FFmpegVideoPlayer.Rendering.OpenGL</RootNamespace>
-    <Version>2.1.8</Version>
     <Authors>jojomondag</Authors>
     <Company>jojomondag</Company>
     <Description>OpenGL-based hardware-accelerated rendering for FFmpegVideoPlayer. Provides OpenGL texture-based video rendering for improved performance.</Description>
@@ -31,8 +31,8 @@
     <ProjectReference Include="..\Avalonia.FFmpegVideoPlayer.csproj" />
     
     <!-- OpenTK for OpenGL support -->
-    <PackageReference Include="OpenTK" Version="4.8.2" />
-    <PackageReference Include="Avalonia" Version="12.0.1" />
+    <PackageReference Include="OpenTK" Version="4.9.4" />
+    <PackageReference Include="Avalonia" Version="$(AvaloniaVersion)" />
   </ItemGroup>
 
 </Project>

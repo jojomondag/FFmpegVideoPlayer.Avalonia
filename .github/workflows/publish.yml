@@ -1,0 +1,47 @@
+name: Publish NuGet package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Read version from release tag
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag '$GITHUB_REF_NAME' is not a package version." >&2
+            exit 1
+          fi
+          echo "PACKAGE_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Restore, build and test
+        run: |
+          dotnet restore FFmpegVideoPlayer.Avalonia.sln
+          dotnet build FFmpegVideoPlayer.Avalonia.sln -c Release --no-restore
+          dotnet test FFmpegVideoPlayer.Avalonia.sln -c Release --no-build --no-restore
+
+      - name: Pack the standalone package
+        run: dotnet pack Avalonia.FFmpegVideoPlayer.csproj -c Release -p:Version=${{ env.PACKAGE_VERSION }} -o artifacts/package
+
+      - name: Attach package to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" artifacts/package/*.nupkg --clobber
+
+      - name: Publish to NuGet.org
+        run: dotnet nuget push "artifacts/package/*.nupkg" --source https://api.nuget.org/v3/index.json --api-key "${{ secrets.NUGET_API_KEY }}" --skip-duplicate

@@ -2,16 +2,13 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <LangVersion>latest</LangVersion>
-    <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
     
     <!-- NuGet Package Properties -->
     <PackageId>FFmpegVideoPlayer.Audio.OpenTK</PackageId>
     <AssemblyName>FFmpegVideoPlayer.Audio.OpenTK</AssemblyName>
     <RootNamespace>FFmpegVideoPlayer.Audio.OpenTK</RootNamespace>
-    <Version>2.1.8</Version>
     <Authors>jojomondag</Authors>
     <Company>jojomondag</Company>
     <Description>OpenTK-based audio implementation for FFmpegVideoPlayer.Core. Provides audio playback using OpenAL.</Description>
@@ -30,29 +27,11 @@
     <ProjectReference Include="..\FFmpegVideoPlayer.Core\FFmpegVideoPlayer.Core.csproj" />
     
     <!-- OpenTK for audio playback - cross-platform -->
-    <PackageReference Include="OpenTK" Version="4.8.2" />
+    <PackageReference Include="OpenTK.Audio.OpenAL" Version="4.9.4" />
     
     <!-- OpenAL Soft native libraries for Windows -->
-    <PackageReference Include="OpenAL.Soft" Version="1.19.1" GeneratePathProperty="true" />
+    <PackageReference Include="OpenAL.Soft" Version="1.23.1" GeneratePathProperty="true" PrivateAssets="all" />
   </ItemGroup>
   
-  <!-- Include OpenAL native libraries as content files that copy to output -->
-  <ItemGroup>
-    <Content Include="$(NuGetPackageRoot)openal.soft\1.19.1\runtimes\win-x64\native\OpenAL32.dll" 
-             Condition="Exists('$(NuGetPackageRoot)openal.soft\1.19.1\runtimes\win-x64\native\OpenAL32.dll')">
-      <Link>runtimes\win-x64\native\OpenAL32.dll</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Pack>true</Pack>
-      <PackagePath>runtimes\win-x64\native\</PackagePath>
-    </Content>
-    <Content Include="$(NuGetPackageRoot)openal.soft\1.19.1\runtimes\win-x86\native\OpenAL32.dll"
-             Condition="Exists('$(NuGetPackageRoot)openal.soft\1.19.1\runtimes\win-x86\native\OpenAL32.dll')">
-      <Link>runtimes\win-x86\native\OpenAL32.dll</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Pack>true</Pack>
-      <PackagePath>runtimes\win-x86\native\</PackagePath>
-    </Content>
-  </ItemGroup>
-
 </Project>
 
