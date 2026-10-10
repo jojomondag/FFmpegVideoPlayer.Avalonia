@@ -11,8 +11,12 @@ seekable streams, DASH manifests and YouTube URLs.
 
 ## Install
 
+The working tree targets `3.1.0-preview.1`. Until that preview is published, pack it
+locally and restore from the resulting package directory. The latest previously
+published version remains `3.0.3`.
+
 ```bash
-dotnet add package FFmpegVideoPlayer.Avalonia --version 3.0.3
+dotnet add package FFmpegVideoPlayer.Avalonia --version 3.1.0-preview.1
 ```
 
 Version 3 requires **Avalonia 12.1.0+ (below 13)** and **.NET 8+**. The single
@@ -139,6 +143,46 @@ dotnet run
 Set `AudioPlayerFactory` to customize or disable audio. OpenAL via OpenTK is the default.
 
 Custom icons: implement `IIconProvider` and set `IconProvider`.
+
+The included Material icon set can be selected without an extra icon dependency:
+
+```xml
+<ffmpeg:VideoPlayerControl
+    Source="recording.mp4"
+    IconProvider="{x:Static ffmpeg:MaterialVideoIconProvider.Instance}" />
+```
+
+Subscribe to `Diagnostic` to integrate playback and audio-output information with
+your application's logger. It reports a player ID, timing, lifecycle kind and,
+where applicable, stream information or audio sample rate/channel count. An audio
+output failure is observable even when a video can continue silently. The default
+OpenTK backend remains inside the library; `AudioPlayerFactory` is only needed for
+a custom backend (return `null` to explicitly disable output).
+
+```csharp
+player.Diagnostic += (_, diagnostic) =>
+    Debug.WriteLine($"{diagnostic.PlayerId}: {diagnostic.Kind}");
+```
+
+Diagnostics can arrive on worker threads. Marshal UI work to Avalonia's dispatcher.
+Observer exceptions are isolated from playback. Nothing is written to disk
+automatically; source metadata, error messages and exceptions may contain private
+information, so redact them before persisting or sharing diagnostics.
+
+Before application shutdown, capture the controls while their windows are still
+attached and close them while the Avalonia dispatcher is running:
+
+```csharp
+var results = await MediaPlayerLifetime.CloseAllAsync(players);
+foreach (var result in results.Where(result => !result.Succeeded))
+    ReportCloseFailure(result.Exception);
+```
+
+Every distinct player is awaited even if another close fails. The helper does not
+dispose the controls or shut down the application. `MediaFileTypes` in Core offers
+case-insensitive audio/video extension hints; opening the actual source determines
+codec support. Provider-specific downloads, layout and application state stay with
+the consuming application.
 
 ## License
 

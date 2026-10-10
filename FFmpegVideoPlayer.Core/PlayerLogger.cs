@@ -1,7 +1,4 @@
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.Text;
 using System.Text.Json;
 
@@ -13,6 +10,12 @@ namespace FFmpegVideoPlayer.Core;
 /// </summary>
 public sealed class PlayerLogger : IDisposable
 {
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
     private readonly List<LogEntry> _logEntries = new();
     private readonly object _lock = new();
     private readonly string? _logFilePath;
@@ -76,12 +79,7 @@ public sealed class PlayerLogger : IDisposable
             // Write empty array to file to clear it
             try
             {
-                var options = new JsonSerializerOptions
-                {
-                    WriteIndented = true,
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                };
-                var json = JsonSerializer.Serialize(new List<LogEntry>(), options);
+                var json = JsonSerializer.Serialize(_logEntries, SerializerOptions);
                 File.WriteAllText(_logFilePath, json, Encoding.UTF8);
                 _lastFlush = DateTime.Now;
                 
@@ -98,26 +96,8 @@ public sealed class PlayerLogger : IDisposable
     {
         lock (_lock)
         {
-            if (_disposed || _logFilePath == null || _logEntries.Count == 0) return;
-
-            try
-            {
-                var options = new JsonSerializerOptions
-                {
-                    WriteIndented = true,
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                };
-
-                var json = JsonSerializer.Serialize(_logEntries, options);
-                File.WriteAllText(_logFilePath, json, Encoding.UTF8);
-                _lastFlush = DateTime.Now;
-                
-                Debug.WriteLine($"[PlayerLogger] Flushed {_logEntries.Count} log entries to {_logFilePath}");
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[PlayerLogger] Failed to write log file: {ex.Message}");
-            }
+            if (_disposed) return;
+            FlushCore(logSuccess: true);
         }
     }
 
@@ -131,22 +111,18 @@ public sealed class PlayerLogger : IDisposable
         }
     }
 
-    private void FlushCore()
+    private void FlushCore(bool logSuccess = false)
     {
         if (_logFilePath == null || _logEntries.Count == 0)
             return;
 
         try
         {
-            var options = new JsonSerializerOptions
-            {
-                WriteIndented = true,
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            };
-
-            var json = JsonSerializer.Serialize(_logEntries, options);
+            var json = JsonSerializer.Serialize(_logEntries, SerializerOptions);
             File.WriteAllText(_logFilePath, json, Encoding.UTF8);
             _lastFlush = DateTime.Now;
+            if (logSuccess)
+                Debug.WriteLine($"[PlayerLogger] Flushed {_logEntries.Count} log entries to {_logFilePath}");
         }
         catch (Exception ex)
         {

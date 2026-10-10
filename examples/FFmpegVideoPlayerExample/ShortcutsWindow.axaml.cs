@@ -5,13 +5,7 @@ namespace FFmpegVideoPlayerExample;
 
 public partial class ShortcutsWindow : Window
 {
-    public ShortcutsWindow()
-    {
-        InitializeComponent();
-    }
+    public ShortcutsWindow() => InitializeComponent();
 
-    private void OnCloseClick(object? sender, RoutedEventArgs e)
-    {
-        Close();
-    }
+    private void OnCloseClick(object? sender, RoutedEventArgs e) => Close();
 }

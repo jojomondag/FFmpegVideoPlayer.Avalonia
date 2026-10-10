@@ -1,41 +1,38 @@
 # FFmpegVideoPlayer.Avalonia Examples
 
-This folder contains example projects demonstrating how to use the FFmpegVideoPlayer.Avalonia library.
-
-## FFmpegVideoPlayerExample
-
-A simple example showing the basic usage of the `VideoPlayerControl`.
-
-### Running the Example
+The example demonstrates `VideoPlayerControl` with Avalonia 12.1+ and .NET 8+.
+Run it from the repository root:
 
 ```bash
-cd examples/FFmpegVideoPlayerExample
-dotnet run
+dotnet run --project examples/FFmpegVideoPlayerExample
 ```
 
-### What it demonstrates
+## What it demonstrates
 
-- Basic setup with `FFmpegInitializer.Initialize()`
-- Using `VideoPlayerControl` in XAML
-- Optional audio support via `AudioPlayerFactory` property (requires FFmpegVideoPlayer.Audio.OpenTK package)
-  - **Note**: On Windows, OpenAL Soft must be installed or `openal32.dll` must be present. See main README for details.
-- Default icons using standard Avalonia shapes (no Material.Icons dependency)
-- FFmpeg initialization options (see `Program.cs` for examples of custom path usage)
+- FFmpeg initialization, including custom native-library paths in `Program.cs`.
+- Playback with audio enabled by default; `AudioPlayerFactory` allows a custom backend.
+- Controls, transparency, stretch modes and a keyboard-shortcut window.
+- Built-in icons without extra packages. For Material icons, set `IconProvider`
+  to `Avalonia.FFmpegVideoPlayer.MaterialVideoIconProvider.Instance`.
+- Console and rotating file logs under the example's output `logs/` directory.
 
-### Project Structure
+The package bundles FFmpeg for Windows x64 and OpenAL Soft for Windows x64, x86
+and ARM64. Other platforms need compatible system libraries; see the
+[main README](../README.md) for native requirements and customization.
 
-- `Program.cs` - Entry point with FFmpeg initialization
-- `App.axaml` - Application setup with required styles
-- `MainWindow.axaml` - Main window with VideoPlayerControl
+## Using the NuGet package
 
-## Using the NuGet Package Instead
-
-If you want to test with the published NuGet package instead of the local project reference, modify the `.csproj`:
+Replace both `ProjectReference` entries in the example `.csproj` with this single
+reference. Core, the control and the default audio backend are included:
 
 ```xml
-<!-- Remove this -->
-<ProjectReference Include="../../Avalonia.FFmpegVideoPlayer.csproj" />
+<PackageReference Include="FFmpegVideoPlayer.Avalonia" Version="3.1.0-preview.1" />
+```
 
-<!-- Add this -->
-<PackageReference Include="FFmpegVideoPlayer.Avalonia" Version="2.1.2" />
+Until the preview is published, build it locally with
+`dotnet pack Avalonia.FFmpegVideoPlayer.csproj -c Release -o artifacts/package`.
+Then restore the example from that directory alongside NuGet.org:
+
+```bash
+dotnet restore examples/FFmpegVideoPlayerExample --source artifacts/package --source https://api.nuget.org/v3/index.json
 ```

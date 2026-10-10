@@ -1,8 +1,5 @@
-using System;
 using System.Diagnostics;
-using System.IO;
 using Avalonia;
-using Avalonia.FFmpegVideoPlayer;
 using FFmpegVideoPlayer.Core;
 using Serilog;
 
@@ -19,11 +16,7 @@ class Program
         {
             Log.Information("Launching FFmpeg Video Player example.");
 
-            FFmpegInitializer.StatusChanged += msg =>
-            {
-                Log.Information(msg);
-                Console.WriteLine(msg);
-            };
+            FFmpegInitializer.StatusChanged += msg => Log.Information("{Status}", msg);
 
             // Initialize FFmpeg
             // Option 1: Use bundled binaries (default - if included in package)
@@ -50,7 +43,7 @@ class Program
 
     private static void SetupLogging()
     {
-        var logDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "debug"));
+        var logDir = Path.Combine(AppContext.BaseDirectory, "logs");
         Directory.CreateDirectory(logDir);
 
         foreach (var file in Directory.EnumerateFiles(logDir, "ffmpeg-example-*.log"))

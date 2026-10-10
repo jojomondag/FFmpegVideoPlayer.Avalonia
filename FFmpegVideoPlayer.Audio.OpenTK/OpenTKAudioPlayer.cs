@@ -183,13 +183,7 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
         {
             cancellationToken.ThrowIfCancellationRequested();
             var count = Math.Min(SamplesPerPacket, sampleCount - offset);
-            count -= count % _channels;
-            if (count == 0)
-                count = sampleCount - offset;
-
-            var copy = new short[count];
-            for (var index = 0; index < count; index++)
-                copy[index] = samples[offset + index];
+            var copy = new ReadOnlySpan<short>(samples + offset, count).ToArray();
 
             if (!TryEnqueuePcm(new PcmPacket(generation, copy), cancellationToken))
                 return;
@@ -223,9 +217,6 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
         {
             cancellationToken.ThrowIfCancellationRequested();
             var count = Math.Min(SamplesPerPacket, output.Length - offset);
-            count -= count % _channels;
-            if (count == 0)
-                count = output.Length - offset;
 
             var pcm = new short[count];
             for (var index = 0; index < count; index++)
@@ -577,6 +568,12 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
             LogAlError("unqueue buffers while stopping");
         }
 
+        // Return the empty source to Initial before queuing a new generation.
+        // A Stopped source treats newly queued pre-roll buffers as processed,
+        // so recycling them would discard PCM and advance the clock without sound.
+        AL.SourceRewind(_source);
+        LogAlError("rewind the cleared audio source");
+
         _availableBuffers.Clear();
         foreach (var buffer in _allBuffers)
             _availableBuffers.Enqueue(buffer);
@@ -699,7 +696,7 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
     private void PublishPlaybackTime(double seconds) =>
         Interlocked.Exchange(ref _cachedPlaybackTimeBits, BitConverter.DoubleToInt64Bits(seconds));
 
-    private void ThrowOnAlError(string operation)
+    private static void ThrowOnAlError(string operation)
     {
         var error = AL.GetError();
         if (error != ALError.NoError)

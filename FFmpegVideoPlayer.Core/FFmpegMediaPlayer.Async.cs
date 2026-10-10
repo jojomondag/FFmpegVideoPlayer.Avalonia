@@ -1,9 +1,3 @@
-using System;
-using System.IO;
-using System.Net.Http;
-using System.Threading;
-using System.Threading.Tasks;
-
 namespace FFmpegVideoPlayer.Core;
 
 public sealed partial class FFmpegMediaPlayer
@@ -40,7 +34,7 @@ public sealed partial class FFmpegMediaPlayer
             Interlocked.Exchange(ref _openGateHeld, 1);
             ObjectDisposedException.ThrowIf(_isDisposed, this);
             operationCancellation.Token.ThrowIfCancellationRequested();
-            var previousSession = ResetForOpen();
+            var previousSession = CloseWhileOpenGateHeld();
             resetPerformed = true;
             if (previousSession is not null)
                 await previousSession.DisposeAsync().ConfigureAwait(false);

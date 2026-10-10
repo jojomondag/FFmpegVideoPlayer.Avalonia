@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <Version>3.0.3</Version>
+    <Version>3.1.0-preview.1</Version>
     <AvaloniaVersion>12.1.0</AvaloniaVersion>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>

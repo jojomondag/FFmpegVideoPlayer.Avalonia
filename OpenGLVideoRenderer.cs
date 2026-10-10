@@ -3,7 +3,6 @@ using System.Diagnostics;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
-using Avalonia.Platform;
 using FFmpegVideoPlayer.Core;
 
 namespace Avalonia.FFmpegVideoPlayer;
@@ -17,7 +16,7 @@ public class OpenGLVideoRenderer : Control, IVideoRenderer
     private int _videoWidth;
     private int _videoHeight;
     private Stretch _stretch = Stretch.Uniform;
-    private WriteableBitmap? _fallbackBitmap; // Fallback to CPU rendering if OpenGL not available
+    private WriteableBitmap? _fallbackBitmap;
 
     /// <summary>
     /// Gets or sets the video width.
@@ -104,31 +103,7 @@ public class OpenGLVideoRenderer : Control, IVideoRenderer
 
         try
         {
-            using (var fb = _fallbackBitmap.Lock())
-            {
-                var destPtr = fb.Address;
-                
-                for (int y = 0; y < height; y++)
-                {
-                    var sourceOffset = y * stride;
-                    var destOffset = y * fb.RowBytes;
-                    var maxRowLength = Math.Min(stride, fb.RowBytes);
-                    var rowLength = Math.Min(width * 4, maxRowLength);
-                    
-                    if (rowLength > 0)
-                    {
-                        unsafe
-                        {
-                            Buffer.MemoryCopy(
-                                (void*)(frameData + sourceOffset),
-                                (void*)(destPtr + destOffset),
-                                rowLength,
-                                rowLength);
-                        }
-                    }
-                }
-            }
-
+            BitmapVideoFrame.Copy(_fallbackBitmap, frameData, width, height, stride);
             InvalidateVisual();
         }
         catch (Exception ex)
@@ -155,19 +130,7 @@ public class OpenGLVideoRenderer : Control, IVideoRenderer
     {
         if (_fallbackBitmap != null)
         {
-            using (var fb = _fallbackBitmap.Lock())
-            {
-                unsafe
-                {
-                    // Clear to transparent (all zeros = transparent black)
-                    var ptr = (byte*)fb.Address;
-                    var size = fb.RowBytes * Height;
-                    for (int i = 0; i < size; i++)
-                    {
-                        ptr[i] = 0;
-                    }
-                }
-            }
+            BitmapVideoFrame.Clear(_fallbackBitmap, Height);
             InvalidateVisual();
         }
     }
@@ -179,52 +142,9 @@ public class OpenGLVideoRenderer : Control, IVideoRenderer
         if (_fallbackBitmap != null && Bounds.Width > 0 && Bounds.Height > 0 && _videoWidth > 0 && _videoHeight > 0)
         {
             var sourceRect = new Rect(0, 0, _videoWidth, _videoHeight);
-            var destRect = CalculateDestinationRect(sourceRect, Bounds, _stretch);
+            var destRect = BitmapVideoFrame.CalculateDestinationRect(sourceRect, Bounds, _stretch);
             context.DrawImage(_fallbackBitmap, sourceRect, destRect);
         }
-    }
-
-    private static Rect CalculateDestinationRect(Rect sourceRect, Rect bounds, Stretch stretch)
-    {
-        var sourceAspect = sourceRect.Width / sourceRect.Height;
-        var boundsAspect = bounds.Width / bounds.Height;
-
-        return stretch switch
-        {
-            Stretch.None => new Rect(
-                bounds.X + (bounds.Width - sourceRect.Width) / 2,
-                bounds.Y + (bounds.Height - sourceRect.Height) / 2,
-                sourceRect.Width,
-                sourceRect.Height),
-
-            Stretch.Fill => bounds,
-
-            Stretch.Uniform => sourceAspect > boundsAspect
-                ? new Rect(
-                    bounds.X,
-                    bounds.Y + (bounds.Height - bounds.Width / sourceAspect) / 2,
-                    bounds.Width,
-                    bounds.Width / sourceAspect)
-                : new Rect(
-                    bounds.X + (bounds.Width - bounds.Height * sourceAspect) / 2,
-                    bounds.Y,
-                    bounds.Height * sourceAspect,
-                    bounds.Height),
-
-            Stretch.UniformToFill => sourceAspect > boundsAspect
-                ? new Rect(
-                    bounds.X + (bounds.Width - bounds.Height * sourceAspect) / 2,
-                    bounds.Y,
-                    bounds.Height * sourceAspect,
-                    bounds.Height)
-                : new Rect(
-                    bounds.X,
-                    bounds.Y + (bounds.Height - bounds.Width / sourceAspect) / 2,
-                    bounds.Width,
-                    bounds.Width / sourceAspect),
-
-            _ => bounds
-        };
     }
 
     public void Dispose()

@@ -1,10 +1,6 @@
-using System;
 using Avalonia.Controls;
-using Avalonia.FFmpegVideoPlayer;
 using Avalonia.Interactivity;
 using Avalonia.Media;
-using FFmpegVideoPlayer.Audio.OpenTK;
-using FFmpegVideoPlayer.Core;
 using Serilog;
 
 namespace FFmpegVideoPlayerExample;
@@ -14,10 +10,6 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        
-        // Set up optional audio factory - if Audio.OpenTK package is not referenced, 
-        // audio will be disabled (video-only mode)
-        VideoPlayer.AudioPlayerFactory = (sampleRate, channels) => AudioPlayerFactory.Create(sampleRate, channels);
         
         ShowControlsCheckBox.IsCheckedChanged += OnShowControlsChanged;
         TransparentBgCheckBox.IsCheckedChanged += OnTransparentBgChanged;
@@ -32,7 +24,7 @@ public partial class MainWindow : Window
 
     private void LogPlaybackEvent(string eventName)
     {
-        var path = VideoPlayer?.CurrentMediaPath;
+        var path = VideoPlayer.CurrentMediaPath;
         if (path != null)
             Log.Information("Playback {EventName}: {MediaPath}", eventName, path);
         else
@@ -41,13 +33,11 @@ public partial class MainWindow : Window
 
     private void OnShowControlsChanged(object? sender, RoutedEventArgs e)
     {
-        if (VideoPlayer == null) return;
         VideoPlayer.ShowControls = ShowControlsCheckBox.IsChecked ?? true;
     }
 
     private void OnTransparentBgChanged(object? sender, RoutedEventArgs e)
     {
-        if (VideoPlayer == null) return;
         VideoPlayer.VideoBackground = TransparentBgCheckBox.IsChecked == true 
             ? Brushes.Transparent 
             : Brushes.Black;
@@ -55,7 +45,6 @@ public partial class MainWindow : Window
 
     private void OnStretchModeChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (VideoPlayer == null) return;
         if (StretchModeComboBox.SelectedItem is ComboBoxItem { Content: string stretchMode } &&
             Enum.TryParse<Stretch>(stretchMode, out var stretch))
         {
@@ -63,9 +52,5 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnShortcutsClick(object? sender, RoutedEventArgs e)
-    {
-        var window = new ShortcutsWindow();
-        window.Show(this);
-    }
+    private void OnShortcutsClick(object? sender, RoutedEventArgs e) => new ShortcutsWindow().Show(this);
 }

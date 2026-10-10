@@ -4,7 +4,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
-using Avalonia.Platform;
 using FFmpegVideoPlayer.Core;
 
 namespace FFmpegVideoPlayer.Rendering.OpenGL;
@@ -17,7 +16,7 @@ public class OpenGLHardwareRenderer : Control, IVideoRenderer
 {
     private int _videoWidth;
     private int _videoHeight;
-    private WriteableBitmap? _fallbackBitmap; // Fallback if OpenGL not available
+    private WriteableBitmap? _fallbackBitmap;
 
     /// <summary>
     /// Gets or sets the video width.
@@ -30,7 +29,7 @@ public class OpenGLHardwareRenderer : Control, IVideoRenderer
             if (_videoWidth != value)
             {
                 _videoWidth = value;
-                UpdateTextureSize();
+                InvalidateVisual();
             }
         }
     }
@@ -46,7 +45,7 @@ public class OpenGLHardwareRenderer : Control, IVideoRenderer
             if (_videoHeight != value)
             {
                 _videoHeight = value;
-                UpdateTextureSize();
+                InvalidateVisual();
             }
         }
     }
@@ -57,36 +56,10 @@ public class OpenGLHardwareRenderer : Control, IVideoRenderer
         RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.HighQuality);
     }
 
-    private void UpdateTextureSize()
-    {
-        // Texture will be updated when frame is rendered
-        InvalidateVisual();
-    }
-
     public void RenderFrame(IntPtr frameData, int width, int height, int stride)
     {
         if (frameData == IntPtr.Zero || width <= 0 || height <= 0)
             return;
-
-        RenderFrameCPU(frameData, width, height, stride);
-    }
-
-    public void RenderFrame(byte[] frameData, int width, int height, int stride)
-    {
-        if (frameData == null || frameData.Length == 0 || width <= 0 || height <= 0)
-            return;
-
-        unsafe
-        {
-            fixed (byte* ptr = frameData)
-            {
-                RenderFrame((IntPtr)ptr, width, height, stride);
-            }
-        }
-    }
-
-    private void RenderFrameCPU(IntPtr frameData, int width, int height, int stride)
-    {
         if (_videoWidth != width || _videoHeight != height)
         {
             Width = width;
@@ -109,13 +82,12 @@ public class OpenGLHardwareRenderer : Control, IVideoRenderer
             using (var fb = _fallbackBitmap.Lock())
             {
                 var destPtr = fb.Address;
+                var rowLength = Math.Min(width * 4, Math.Min(stride, fb.RowBytes));
                 
                 for (int y = 0; y < height; y++)
                 {
                     var sourceOffset = y * stride;
                     var destOffset = y * fb.RowBytes;
-                    var maxRowLength = Math.Min(stride, fb.RowBytes);
-                    var rowLength = Math.Min(width * 4, maxRowLength);
                     
                     if (rowLength > 0)
                     {
@@ -139,6 +111,18 @@ public class OpenGLHardwareRenderer : Control, IVideoRenderer
         }
     }
 
+    public void RenderFrame(byte[] frameData, int width, int height, int stride)
+    {
+        if (frameData == null || frameData.Length == 0 || width <= 0 || height <= 0)
+            return;
+
+        unsafe
+        {
+            fixed (byte* ptr = frameData)
+                RenderFrame((IntPtr)ptr, width, height, stride);
+        }
+    }
+
     public void Clear()
     {
         if (_fallbackBitmap != null)
@@ -147,12 +131,9 @@ public class OpenGLHardwareRenderer : Control, IVideoRenderer
             {
                 unsafe
                 {
-                    var ptr = (byte*)fb.Address;
                     var size = fb.RowBytes * Height;
-                    for (int i = 0; i < size; i++)
-                    {
-                        ptr[i] = 0;
-                    }
+                    if (size > 0)
+                        new Span<byte>((void*)fb.Address, size).Clear();
                 }
             }
             InvalidateVisual();

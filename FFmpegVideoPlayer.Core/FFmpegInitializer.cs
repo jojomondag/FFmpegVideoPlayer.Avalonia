@@ -1,8 +1,5 @@
-using System;
 using System.Diagnostics;
-using System.IO;
 using System.Runtime.InteropServices;
-using System.Threading.Tasks;
 using FFmpeg.AutoGen;
 
 namespace FFmpegVideoPlayer.Core;
@@ -350,12 +347,6 @@ public static class FFmpegInitializer
             Initialize(customPath, autoInstall, useBundledBinaries);
             errorMessage = null;
             return true;
-        }
-        catch (FFmpegNotFoundException ex)
-        {
-            errorMessage = ex.Message;
-            _initializationError = ex.Message;
-            return false;
         }
         catch (Exception ex)
         {
@@ -765,11 +756,8 @@ After installation, restart your terminal/IDE.";
 
     private static string? FindFFmpegPath()
     {
-        // Note: Custom path and bundled FFmpeg are now handled in Initialize() method
-        // This method is only called for system discovery fallback
-        
-        // Check for bundled FFmpeg (from NuGet packages) - but only if not already configured
-        var bundledPath = FindBundledFFmpeg();
+        // Retain bundled discovery here for installation-status checks as well as initialization.
+        var bundledPath = FFmpegPathResolver.TryConfigureBundledFFmpeg();
         if (!string.IsNullOrEmpty(bundledPath))
         {
             Log($"Found bundled FFmpeg: {bundledPath}");
@@ -809,12 +797,6 @@ After installation, restart your terminal/IDE.";
         }
 
         return null;
-    }
-
-    private static string? FindBundledFFmpeg()
-    {
-        // NuGet packages typically deploy native libraries to runtimes/{rid}/native/
-        return FFmpegPathResolver.TryConfigureBundledFFmpeg();
     }
 
     private static string? FindWindowsFFmpeg()
@@ -906,32 +888,14 @@ After installation, restart your terminal/IDE.";
     private static string? FindLinuxFFmpeg()
     {
         // System library paths (architecture-specific)
-        var systemPaths = new List<string>();
-
-        if (IsArm)
+        var systemPaths = new[]
         {
-            systemPaths.AddRange(new[]
-            {
-                "/usr/lib/aarch64-linux-gnu",        // Debian/Ubuntu ARM64
-                "/usr/lib64",                         // Fedora/RHEL ARM64
-            });
-        }
-        else
-        {
-            systemPaths.AddRange(new[]
-            {
-                "/usr/lib/x86_64-linux-gnu",         // Debian/Ubuntu x64
-                "/usr/lib64",                         // Fedora/RHEL x64
-            });
-        }
-
-        // Common paths for all architectures
-        systemPaths.AddRange(new[]
-        {
+            IsArm ? "/usr/lib/aarch64-linux-gnu" : "/usr/lib/x86_64-linux-gnu", // Debian/Ubuntu
+            "/usr/lib64", // Fedora/RHEL
             "/usr/lib",
             "/usr/local/lib",
             "/lib",
-        });
+        };
 
         foreach (var path in systemPaths)
         {

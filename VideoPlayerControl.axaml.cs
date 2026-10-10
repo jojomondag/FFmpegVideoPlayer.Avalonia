@@ -11,7 +11,6 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using FFmpegVideoPlayer.Core;
 using Path = Avalonia.Controls.Shapes.Path;
-using OpenTKAudioFactory = FFmpegVideoPlayer.Audio.OpenTK.AudioPlayerFactory;
 
 namespace Avalonia.FFmpegVideoPlayer;
 
@@ -38,13 +37,16 @@ public enum VideoRenderingMode
 /// </summary>
 public partial class VideoPlayerControl : UserControl
 {
+    private static int _nextPlayerId;
+    private readonly int _playerId = Interlocked.Increment(ref _nextPlayerId);
+    private MediaInfo? _diagnosticMediaInfo;
     private FFmpegMediaPlayer? _mediaPlayer;
+    private Task<Exception?> _detachedDisposal = Task.FromResult<Exception?>(null);
     private Slider? _seekBar;
     private Slider? _volumeSlider;
     private TextBlock? _currentTimeText;
     private TextBlock? _totalTimeText;
     private Path? _playPauseIcon;
-    private TextBlock? _playPauseText; // null when using icon-only layout
     private Path? _volumeIcon;
     private bool _isDraggingSeekBar;
     private bool _isMuted;
@@ -237,7 +239,7 @@ public partial class VideoPlayerControl : UserControl
 
     /// <summary>
     /// Defines the AudioPlayerFactory property for injecting custom audio player implementations.
-    /// If null, audio playback will be disabled (video-only mode).
+    /// If null, the default OpenTK/OpenAL audio output is used.
     /// </summary>
     public static readonly StyledProperty<Func<int, int, IAudioPlayer?>?> AudioPlayerFactoryProperty =
         AvaloniaProperty.Register<VideoPlayerControl, Func<int, int, IAudioPlayer?>?>(nameof(AudioPlayerFactory), null);
@@ -245,7 +247,9 @@ public partial class VideoPlayerControl : UserControl
     /// <summary>
     /// Gets or sets the factory function for creating audio players.
     /// Signature: (sampleRate, channels) => IAudioPlayer?
-    /// If null, audio playback will be disabled (video-only mode).
+    /// A null property uses the default OpenTK/OpenAL output. A custom factory
+    /// returning null disables audio output. Configure this before the native
+    /// player is initialized; changes apply after detach and reinitialization.
     /// </summary>
     public Func<int, int, IAudioPlayer?>? AudioPlayerFactory
     {
@@ -485,6 +489,14 @@ public partial class VideoPlayerControl : UserControl
     /// </summary>
     public event EventHandler? MediaEnded;
 
+    /// <summary>Occurs when an optional lifecycle or audio-output diagnostic is available.</summary>
+    /// <remarks>
+    /// Callbacks may run on a worker thread. Observer exceptions are isolated from
+    /// playback. The library does not automatically persist diagnostics; sinks must
+    /// redact any source details contained in media information or exceptions.
+    /// </remarks>
+    public event EventHandler<VideoPlayerDiagnosticEventArgs>? Diagnostic;
+
     /// <summary>
     /// Creates a new instance of the VideoPlayerControl.
     /// </summary>
@@ -500,11 +512,13 @@ public partial class VideoPlayerControl : UserControl
         _currentTimeText = this.FindControl<TextBlock>("CurrentTimeText");
         _totalTimeText = this.FindControl<TextBlock>("TotalTimeText");
         _playPauseIcon = this.FindControl<Path>("PlayPauseIcon");
-        _playPauseText = this.FindControl<TextBlock>("PlayPauseText");
         _volumeIcon = this.FindControl<Path>("VolumeIcon");
         _controlPanelBorder = this.FindControl<Border>("ControlPanelBorder");
         _videoBorder = this.FindControl<Border>("VideoBorder");
         _openButton = this.FindControl<Button>("OpenButton");
+
+        // Icons must be ready for the first render, before any playback event.
+        ApplyControlIcons();
 
         // Apply initial visibility based on properties
         if (_controlPanelBorder != null)
@@ -637,18 +651,8 @@ public partial class VideoPlayerControl : UserControl
         }
         else if (e.Property == VideoStretchProperty)
         {
-            // Apply to renderer
             if (e.NewValue is global::Avalonia.Media.Stretch rendererStretch)
-            {
-                if (_videoRenderer is CpuVideoRenderer cpuRenderer)
-                {
-                    cpuRenderer.Stretch = rendererStretch;
-                }
-                else if (_videoRenderer is OpenGLVideoRenderer glRenderer)
-                {
-                    glRenderer.Stretch = rendererStretch;
-                }
-            }
+                ApplyVideoStretch(rendererStretch);
         }
         else if (e.Property == ShowControlsProperty)
         {
@@ -670,6 +674,10 @@ public partial class VideoPlayerControl : UserControl
         {
             UpdateFullscreenIcon();
         }
+        else if (e.Property == IconProviderProperty)
+        {
+            ApplyControlIcons();
+        }
         else if (e.Property == ControlForegroundProperty)
         {
             ApplyControlForeground(e.NewValue as global::Avalonia.Media.IBrush);
@@ -688,7 +696,8 @@ public partial class VideoPlayerControl : UserControl
             this.FindControl<Path>("FolderIcon"),
             _playPauseIcon,
             this.FindControl<Path>("StopIcon"),
-            _volumeIcon
+            _volumeIcon,
+            this.FindControl<Path>("FullscreenIcon")
         };
         foreach (var icon in icons)
         {
@@ -715,11 +724,30 @@ public partial class VideoPlayerControl : UserControl
 
     private void OnAttachedToVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
     {
+        // Styles can supply a provider and brushes when the control is attached.
+        // Apply them independently of native media initialization.
+        ApplyControlIcons();
+        ApplyControlForeground(ControlForeground);
         InitializePlayer();
+    }
+
+    private void ApplyControlIcons()
+    {
+        var provider = GetIconProvider();
+        var folderIcon = this.FindControl<Path>("FolderIcon");
+        if (folderIcon != null) folderIcon.Data = provider.CreateFolderOpenIcon();
+        var stopIcon = this.FindControl<Path>("StopIcon");
+        if (stopIcon != null) stopIcon.Data = provider.CreateStopIcon();
+        if (_playPauseIcon != null)
+            _playPauseIcon.Data = IsPlaying ? provider.CreatePauseIcon() : provider.CreatePlayIcon();
+        if (_volumeIcon != null)
+            _volumeIcon.Data = _isMuted ? provider.CreateVolumeOffIcon() : provider.CreateVolumeHighIcon();
+        UpdateFullscreenIcon();
     }
 
     private void OnDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
     {
+        ReportDiagnostic(VideoPlayerDiagnosticKind.Detached);
         Cleanup();
     }
 
@@ -735,11 +763,12 @@ public partial class VideoPlayerControl : UserControl
                 FFmpegInitializer.Initialize();
             }
 
-            // Use StyledProperty AudioPlayerFactory when set; otherwise default to OpenAL via OpenTK.
-            // Note: do not pass `AudioPlayerFactory` bare — that is the instance property and is null by default,
-            // which disabled all audio (video-only mode).
-            Func<int, int, IAudioPlayer?> effectiveAudioFactory = AudioPlayerFactory
-                ?? ((sr, ch) => OpenTKAudioFactory.Create(sr, ch));
+            // Capture the configured factory for this native player, matching the
+            // existing lifetime of AudioPlayerFactory. The wrapper keeps audio
+            // failures nonfatal and exposes them to optional diagnostics observers.
+            var configuredAudioFactory = AudioPlayerFactory;
+            Func<int, int, IAudioPlayer?> effectiveAudioFactory =
+                (sampleRate, channels) => CreateAudioPlayer(sampleRate, channels, configuredAudioFactory);
 
             _mediaPlayer = new FFmpegMediaPlayer(
                 synchronizationCallback: action => Dispatcher.UIThread.Post(action),
@@ -783,16 +812,6 @@ public partial class VideoPlayerControl : UserControl
             {
                 _videoBorder.Background = VideoBackground; // Can be null for transparency
             }
-            // Apply VideoStretch to renderer
-            if (_videoRenderer is CpuVideoRenderer cpuRenderer)
-            {
-                cpuRenderer.Stretch = VideoStretch;
-            }
-            else if (_videoRenderer is OpenGLVideoRenderer glRenderer)
-            {
-                glRenderer.Stretch = VideoStretch;
-            }
-            
             // Load source if set (Open() handles AutoPlay internally)
             var initialMedia = Media ?? (!string.IsNullOrWhiteSpace(Source)
                 ? MediaSource.FromLocation(Source)
@@ -803,10 +822,83 @@ public partial class VideoPlayerControl : UserControl
         catch (Exception ex)
         {
             Debug.WriteLine($"[VideoPlayerControl] Failed to initialize FFmpeg: {ex.Message}");
-            MediaFailed?.Invoke(this, new MediaFailedEventArgs(new MediaError(
+            var error = new MediaError(
                 MediaErrorCode.NativeLibraryUnavailable,
                 "FFmpeg or its audio output could not be initialized.",
-                Exception: ex)));
+                Exception: ex);
+            ReportDiagnostic(VideoPlayerDiagnosticKind.Failed, error: error, exception: ex);
+            MediaFailed?.Invoke(this, new MediaFailedEventArgs(error));
+        }
+    }
+
+    private IAudioPlayer? CreateAudioPlayer(
+        int sampleRate,
+        int channels,
+        Func<int, int, IAudioPlayer?>? factory)
+    {
+        try
+        {
+            var player = factory is null
+                ? new global::FFmpegVideoPlayer.Audio.OpenTK.OpenTKAudioPlayer(sampleRate, channels)
+                : factory(sampleRate, channels);
+
+            if (player is null)
+            {
+                ReportDiagnostic(VideoPlayerDiagnosticKind.AudioOutputFailed,
+                    error: new MediaError(MediaErrorCode.AudioOutputUnavailable,
+                        "The audio output factory returned no audio player."),
+                    sampleRate: sampleRate, channels: channels);
+            }
+            else
+            {
+                ReportDiagnostic(VideoPlayerDiagnosticKind.AudioOutputReady,
+                    sampleRate: sampleRate, channels: channels);
+            }
+
+            return player;
+        }
+        catch (Exception ex)
+        {
+            ReportDiagnostic(VideoPlayerDiagnosticKind.AudioOutputFailed,
+                error: new MediaError(MediaErrorCode.AudioOutputUnavailable,
+                    "The audio output could not be initialized.", Exception: ex),
+                exception: ex, sampleRate: sampleRate, channels: channels);
+            return null;
+        }
+    }
+
+    private void ReportDiagnostic(
+        VideoPlayerDiagnosticKind kind,
+        MediaInfo? mediaInfo = null,
+        MediaError? error = null,
+        Exception? exception = null,
+        int? sampleRate = null,
+        int? channels = null)
+    {
+        var observers = Diagnostic;
+        if (observers is null)
+            return;
+
+        // Hold one native-player reference while visual-tree detach may clear it.
+        var player = Volatile.Read(ref _mediaPlayer);
+        var duration = player?.Length ?? 0;
+        var position = player is null ? 0 : (long)(player.Position * duration);
+        var diagnostic = new VideoPlayerDiagnosticEventArgs(
+            kind, _playerId, position, duration,
+            mediaInfo ?? _diagnosticMediaInfo, error, exception ?? error?.Exception,
+            sampleRate, channels);
+
+        foreach (EventHandler<VideoPlayerDiagnosticEventArgs> observer in observers.GetInvocationList())
+        {
+            try
+            {
+                observer(this, diagnostic);
+            }
+            catch (Exception)
+            {
+                // Diagnostics must neither interrupt playback nor prevent other
+                // observers from receiving the same snapshot.
+            }
         }
     }
 
@@ -815,51 +907,30 @@ public partial class VideoPlayerControl : UserControl
         if (_videoBorder == null) return;
         _videoBorder.MinWidth = 0;
 
-        // Dispose old renderer
-        if (_videoRenderer != null)
-        {
-            _videoRenderer.Dispose();
-            _videoRenderer = null;
-        }
+        _videoRenderer?.Dispose();
+        _videoRenderer = null;
 
         // Remove old renderer from visual tree
         _videoBorder.Child = null;
 
-        // Create new renderer based on mode
-        Control? rendererControl = null;
+        Control? rendererControl;
         try
         {
-            switch (RenderingMode)
+            // OpenGL is retained as a CPU-backed compatibility renderer.
+            rendererControl = RenderingMode switch
             {
-                case VideoRenderingMode.Cpu:
-                    _videoRenderer = new CpuVideoRenderer();
-                    rendererControl = (Control)_videoRenderer;
-                    break;
-
-                case VideoRenderingMode.OpenGL:
-                    // Try to create OpenGL renderer, fallback to CPU if not available
-                    try
-                    {
-                        _videoRenderer = new OpenGLVideoRenderer();
-                        rendererControl = (Control)_videoRenderer;
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"[VideoPlayerControl] OpenGL renderer not available, falling back to CPU: {ex.Message}");
-                        _videoRenderer = new CpuVideoRenderer();
-                        rendererControl = (Control)_videoRenderer;
-                    }
-                    break;
-            }
+                VideoRenderingMode.Cpu => new CpuVideoRenderer(),
+                VideoRenderingMode.OpenGL => new OpenGLVideoRenderer(),
+                _ => null
+            };
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"[VideoPlayerControl] Failed to create renderer: {ex.Message}");
-            // Fallback to CPU renderer
-            _videoRenderer = new CpuVideoRenderer();
-            rendererControl = (Control)_videoRenderer;
+            rendererControl = new CpuVideoRenderer();
         }
 
+        _videoRenderer = rendererControl as IVideoRenderer;
         if (rendererControl != null)
         {
             rendererControl.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
@@ -867,24 +938,26 @@ public partial class VideoPlayerControl : UserControl
             
             _videoBorder.Child = rendererControl;
             
-            // Apply VideoStretch to the renderer (cast to concrete type to access Stretch property)
-            if (_videoRenderer is CpuVideoRenderer cpuRenderer)
-            {
-                cpuRenderer.Stretch = VideoStretch;
-            }
-            else if (_videoRenderer is OpenGLVideoRenderer glRenderer)
-            {
-                glRenderer.Stretch = VideoStretch;
-            }
+            ApplyVideoStretch(VideoStretch);
         }
+    }
+
+    private void ApplyVideoStretch(Stretch stretch)
+    {
+        if (_videoRenderer is CpuVideoRenderer cpuRenderer)
+            cpuRenderer.Stretch = stretch;
+        else if (_videoRenderer is OpenGLVideoRenderer glRenderer)
+            glRenderer.Stretch = stretch;
     }
 
     private void OnFrameReady(object? sender, FrameEventArgs e)
     {
         // Note: This is already called on the UI thread via Dispatcher.UIThread.Post in FFmpegMediaPlayer
+        var openGeneration = Volatile.Read(ref _openGeneration);
         var mediaGeneration = e.MediaGeneration;
         var timelineGeneration = e.TimelineGeneration;
         if (sender is not FFmpegMediaPlayer mediaPlayer
+            || !ReferenceEquals(mediaPlayer, Volatile.Read(ref _mediaPlayer))
             || mediaGeneration != mediaPlayer.MediaGeneration
             || timelineGeneration != mediaPlayer.TimelineGeneration)
         {
@@ -918,9 +991,16 @@ public partial class VideoPlayerControl : UserControl
         }
 
         if (rendered && _firstFramePresentation.TryPresent(
-                Volatile.Read(ref _openGeneration),
+                openGeneration,
                 mediaGeneration))
         {
+            ReportDiagnostic(VideoPlayerDiagnosticKind.FirstFramePresented);
+            if (!IsCurrentPlayer(mediaPlayer, openGeneration)
+                || mediaGeneration != mediaPlayer.MediaGeneration
+                || timelineGeneration != mediaPlayer.TimelineGeneration)
+            {
+                return;
+            }
             try
             {
                 FirstFramePresented?.Invoke(this, EventArgs.Empty);
@@ -945,15 +1025,24 @@ public partial class VideoPlayerControl : UserControl
     {
         ArgumentNullException.ThrowIfNull(source);
         EnsurePlayerInitialized();
-        if (_mediaPlayer is null)
+        var mediaPlayer = Volatile.Read(ref _mediaPlayer);
+        if (mediaPlayer is null)
             return CreateInitializationFailure();
 
         CancelControlOpen();
         var generation = Volatile.Read(ref _openGeneration);
         Volatile.Write(ref _requestedSource, source);
         _hasMediaLoaded = false;
+        _diagnosticMediaInfo = null;
+        ReportDiagnostic(VideoPlayerDiagnosticKind.Opening);
+        if (!IsCurrentPlayer(mediaPlayer, generation)
+            || !ReferenceEquals(source, Volatile.Read(ref _requestedSource)))
+            return SupersededOpenResult();
         MediaOpening?.Invoke(this, new MediaOpeningEventArgs(source));
-        var result = _mediaPlayer.Open(source, options);
+        if (!IsCurrentPlayer(mediaPlayer, generation)
+            || !ReferenceEquals(source, Volatile.Read(ref _requestedSource)))
+            return SupersededOpenResult();
+        var result = mediaPlayer.Open(source, options);
         if (generation == Volatile.Read(ref _openGeneration)
             && ReferenceEquals(source, Volatile.Read(ref _requestedSource))
             && result.Succeeded
@@ -972,7 +1061,8 @@ public partial class VideoPlayerControl : UserControl
     {
         ArgumentNullException.ThrowIfNull(source);
         EnsurePlayerInitialized();
-        if (_mediaPlayer is null)
+        var mediaPlayer = Volatile.Read(ref _mediaPlayer);
+        if (mediaPlayer is null)
             return CreateInitializationFailure();
 
         var generation = Interlocked.Increment(ref _openGeneration);
@@ -983,10 +1073,20 @@ public partial class VideoPlayerControl : UserControl
         TryCancel(previousCancellation);
 
         _hasMediaLoaded = false;
-        MediaOpening?.Invoke(this, new MediaOpeningEventArgs(source));
+        _diagnosticMediaInfo = null;
         try
         {
-            var result = await _mediaPlayer
+            ReportDiagnostic(VideoPlayerDiagnosticKind.Opening);
+            operationCancellation.Token.ThrowIfCancellationRequested();
+            if (!IsCurrentPlayer(mediaPlayer, generation)
+                || !ReferenceEquals(source, Volatile.Read(ref _requestedSource)))
+                return SupersededOpenResult();
+            MediaOpening?.Invoke(this, new MediaOpeningEventArgs(source));
+            operationCancellation.Token.ThrowIfCancellationRequested();
+            if (!IsCurrentPlayer(mediaPlayer, generation)
+                || !ReferenceEquals(source, Volatile.Read(ref _requestedSource)))
+                return SupersededOpenResult();
+            var result = await mediaPlayer
                 .OpenAsync(source, options, operationCancellation.Token)
                 .ConfigureAwait(false);
 
@@ -1039,7 +1139,13 @@ public partial class VideoPlayerControl : UserControl
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 if (ReferenceEquals(source, Volatile.Read(ref _requestedSource)))
-                    MediaFailed?.Invoke(this, new MediaFailedEventArgs(error, source));
+                {
+                    var generation = Volatile.Read(ref _openGeneration);
+                    ReportDiagnostic(VideoPlayerDiagnosticKind.Failed, error: error);
+                    if (generation == Volatile.Read(ref _openGeneration)
+                        && ReferenceEquals(source, Volatile.Read(ref _requestedSource)))
+                        MediaFailed?.Invoke(this, new MediaFailedEventArgs(error, source));
+                }
             });
         }
     }
@@ -1056,6 +1162,7 @@ public partial class VideoPlayerControl : UserControl
 
         _currentMediaPath = source.DisplayName;
         _hasMediaLoaded = true;
+        _diagnosticMediaInfo = mediaInfo;
 
         if (mediaInfo.HasVideo)
         {
@@ -1066,6 +1173,16 @@ public partial class VideoPlayerControl : UserControl
         {
             _firstFramePresentation.Reset();
             ShowAudioOnlyPlaceholder();
+        }
+
+        ReportDiagnostic(VideoPlayerDiagnosticKind.Opened, mediaInfo: mediaInfo);
+
+        // Diagnostic observers can replace the source just like media observers.
+        if (generation != Volatile.Read(ref _openGeneration)
+            || !ReferenceEquals(source, Volatile.Read(ref _requestedSource))
+            || !ReferenceEquals(mediaPlayer, _mediaPlayer))
+        {
+            return;
         }
 
         MediaOpened?.Invoke(this, new MediaOpenedEventArgs(source, mediaInfo));
@@ -1093,11 +1210,20 @@ public partial class VideoPlayerControl : UserControl
             InitializePlayer();
     }
 
+    private bool IsCurrentPlayer(FFmpegMediaPlayer? player, long generation) =>
+        player is not null
+        && ReferenceEquals(player, Volatile.Read(ref _mediaPlayer))
+        && generation == Volatile.Read(ref _openGeneration);
+
+    private static MediaOpenResult SupersededOpenResult() => MediaOpenResult.Failure(new MediaError(
+        MediaErrorCode.Cancelled, "The media open was superseded by another player operation."));
+
     private MediaOpenResult CreateInitializationFailure()
     {
         var error = new MediaError(
             MediaErrorCode.NativeLibraryUnavailable,
             "The FFmpeg media player is not initialized.");
+        ReportDiagnostic(VideoPlayerDiagnosticKind.Failed, error: error);
         MediaFailed?.Invoke(this, new MediaFailedEventArgs(error));
         return MediaOpenResult.Failure(error);
     }
@@ -1141,27 +1267,38 @@ public partial class VideoPlayerControl : UserControl
         _videoRenderer?.Clear();
     }
 
-    /// <summary>Cancels pending resolution and releases the current media session.</summary>
+    /// <summary>Cancels pending resolution and releases current and detached native media sessions.</summary>
     public async Task CloseAsync(CancellationToken cancellationToken = default)
     {
         CancelControlOpen();
-        var player = _mediaPlayer;
+        var generation = Volatile.Read(ref _openGeneration);
+        var player = Volatile.Read(ref _mediaPlayer);
+        if (player is not null)
+        {
+            try
+            {
+                await player.CloseAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Detach can dispose this player while close is awaiting work.
+            }
+        }
+
+        var disposalException = await Volatile.Read(ref _detachedDisposal)
+            .WaitAsync(cancellationToken).ConfigureAwait(false);
+        if (disposalException is not null)
+            throw new InvalidOperationException("A detached media player could not be disposed.", disposalException);
         if (player is null)
             return;
 
-        try
-        {
-            await player.CloseAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (ObjectDisposedException)
-        {
-            return;
-        }
-
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
+            if (!IsCurrentPlayer(player, generation))
+                return;
             _currentMediaPath = null;
             _hasMediaLoaded = false;
+            _diagnosticMediaInfo = null;
             if (_seekBar != null) _seekBar.Value = 0;
             if (_currentTimeText != null) _currentTimeText.Text = "00:00";
             if (_totalTimeText != null) _totalTimeText.Text = "00:00";
@@ -1245,18 +1382,29 @@ public partial class VideoPlayerControl : UserControl
 
     private void OnPlaying(object? sender, EventArgs e)
     {
+        var generation = Volatile.Read(ref _openGeneration);
+        if (sender is not FFmpegMediaPlayer player || !IsCurrentPlayer(player, generation)) return;
+        var state = player.State;
         UpdatePlayPauseButton(true);
-        PlaybackStarted?.Invoke(this, EventArgs.Empty);
+        ReportDiagnostic(VideoPlayerDiagnosticKind.Playing);
+        if (IsCurrentPlayer(player, generation) && state == player.State)
+            PlaybackStarted?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnCoreMediaFailed(object? sender, MediaFailedEventArgs e)
     {
+        if (!ReferenceEquals(sender, Volatile.Read(ref _mediaPlayer)))
+            return;
         var requestedSource = Volatile.Read(ref _requestedSource);
         if (e.Source is not null && !ReferenceEquals(e.Source, requestedSource))
             return;
 
         _hasMediaLoaded = false;
-        MediaFailed?.Invoke(this, e);
+        var generation = Volatile.Read(ref _openGeneration);
+        ReportDiagnostic(VideoPlayerDiagnosticKind.Failed, error: e.Error);
+        if (generation == Volatile.Read(ref _openGeneration)
+            && ReferenceEquals(requestedSource, Volatile.Read(ref _requestedSource)))
+            MediaFailed?.Invoke(this, e);
     }
 
     private void OnCoreStateChanged(object? sender, PlaybackStateChangedEventArgs e) =>
@@ -1298,22 +1446,38 @@ public partial class VideoPlayerControl : UserControl
 
     private void OnPaused(object? sender, EventArgs e)
     {
+        var generation = Volatile.Read(ref _openGeneration);
+        if (sender is not FFmpegMediaPlayer player || !IsCurrentPlayer(player, generation)) return;
+        var state = player.State;
         UpdatePlayPauseButton(false);
-        PlaybackPaused?.Invoke(this, EventArgs.Empty);
+        ReportDiagnostic(VideoPlayerDiagnosticKind.Paused);
+        if (IsCurrentPlayer(player, generation) && state == player.State)
+            PlaybackPaused?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnStopped(object? sender, EventArgs e)
     {
+        var generation = Volatile.Read(ref _openGeneration);
+        if (sender is not FFmpegMediaPlayer player || !IsCurrentPlayer(player, generation)) return;
+        var state = player.State;
         UpdatePlayPauseButton(false);
-        PlaybackStopped?.Invoke(this, EventArgs.Empty);
-        // Clear the renderer to show background when stopped
+        // Clear before notifying observers, which may open a replacement source.
         _videoRenderer?.Clear();
+        ReportDiagnostic(VideoPlayerDiagnosticKind.Stopped);
+        if (IsCurrentPlayer(player, generation) && state == player.State)
+            PlaybackStopped?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnEndReached(object? sender, EventArgs e)
     {
+        var generation = Volatile.Read(ref _openGeneration);
+        if (sender is not FFmpegMediaPlayer player || !IsCurrentPlayer(player, generation)) return;
+        var timelineGeneration = player.TimelineGeneration;
         Dispatcher.UIThread.Post(() =>
         {
+            if (!IsCurrentPlayer(player, generation)
+                || timelineGeneration != player.TimelineGeneration)
+                return;
             UpdatePlayPauseButton(false);
 
             // Set seek bar to end and show total time
@@ -1321,7 +1485,10 @@ public partial class VideoPlayerControl : UserControl
             if (_currentTimeText != null && _totalTimeText != null)
                 _currentTimeText.Text = _totalTimeText.Text;
 
-            MediaEnded?.Invoke(this, EventArgs.Empty);
+            ReportDiagnostic(VideoPlayerDiagnosticKind.Ended);
+            if (IsCurrentPlayer(player, generation)
+                && timelineGeneration == player.TimelineGeneration)
+                MediaEnded?.Invoke(this, EventArgs.Empty);
         });
     }
 
@@ -1499,10 +1666,6 @@ public partial class VideoPlayerControl : UserControl
             {
                 _playPauseIcon.Data = isPlaying ? iconProvider.CreatePauseIcon() : iconProvider.CreatePlayIcon();
             }
-            if (_playPauseText != null)
-            {
-                _playPauseText.Text = isPlaying ? "Pause" : "Play";
-            }
         });
     }
 
@@ -1521,7 +1684,7 @@ public partial class VideoPlayerControl : UserControl
     private void Cleanup()
     {
         CancelControlOpen();
-        var mediaPlayer = Interlocked.Exchange(ref _mediaPlayer, null);
+        var mediaPlayer = Volatile.Read(ref _mediaPlayer);
         if (mediaPlayer != null)
         {
             mediaPlayer.PositionChanged -= OnPositionChanged;
@@ -1536,7 +1699,12 @@ public partial class VideoPlayerControl : UserControl
 
             // Source providers are extensible and may take time to observe
             // cancellation. Never block Avalonia's visual-tree detach path.
-            _ = DisposeDetachedPlayerAsync(mediaPlayer);
+            var completion = new TaskCompletionSource<Exception?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var previousDisposal = Interlocked.Exchange(ref _detachedDisposal, completion.Task);
+            // Publish the pending cleanup before clearing the native player, so a
+            // concurrent CloseAsync cannot miss both the player and its disposal.
+            Interlocked.CompareExchange(ref _mediaPlayer, null, mediaPlayer);
+            _ = DisposeDetachedPlayerAsync(mediaPlayer, previousDisposal, completion);
         }
         
         if (_videoRenderer != null)
@@ -1548,18 +1716,42 @@ public partial class VideoPlayerControl : UserControl
         _isInitialized = false;
         _currentMediaPath = null;
         _hasMediaLoaded = false;
+        _diagnosticMediaInfo = null;
     }
 
-    private static Task DisposeDetachedPlayerAsync(FFmpegMediaPlayer mediaPlayer) =>
+    private Task DisposeDetachedPlayerAsync(
+        FFmpegMediaPlayer mediaPlayer,
+        Task<Exception?> previousDisposal,
+        TaskCompletionSource<Exception?> completion) =>
         Task.Run(async () =>
         {
+            Exception? failure = null;
             try
             {
                 await mediaPlayer.DisposeAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
+                failure = ex;
                 Debug.WriteLine($"[VideoPlayerControl] Background cleanup failed: {ex.Message}");
+            }
+
+            try
+            {
+                var previousFailure = await previousDisposal.ConfigureAwait(false);
+                if (previousFailure is not null)
+                    failure = failure is null ? previousFailure : new AggregateException(previousFailure, failure);
+            }
+            catch (Exception ex)
+            {
+                failure = failure is null ? ex : new AggregateException(ex, failure);
+            }
+
+            completion.TrySetResult(failure);
+            if (failure is not null)
+            {
+                ReportDiagnostic(VideoPlayerDiagnosticKind.DetachedCleanupFailed, error: new MediaError(
+                    MediaErrorCode.PlaybackFailed, "A detached media player could not be disposed.", Exception: failure));
             }
         });
 }
@@ -1661,136 +1853,30 @@ public sealed class DefaultIconProvider : IIconProvider
 
     private DefaultIconProvider() { }
 
-    /// <summary>
-    /// Creates a play icon geometry (triangle pointing right).
-    /// </summary>
-    public Geometry CreatePlayIcon()
-    {
-        var geometry = new PathGeometry();
-        var figure = new PathFigure { StartPoint = new Point(6, 4) };
-        figure.Segments!.Add(new LineSegment { Point = new Point(6, 16) });
-        figure.Segments!.Add(new LineSegment { Point = new Point(18, 10) });
-        figure.Segments!.Add(new LineSegment { Point = new Point(6, 4) });
-        geometry.Figures!.Add(figure);
-        return geometry;
-    }
+    // Use StreamGeometry: Avalonia 12.1.3 clones PathGeometry without its figures
+    // when Path.Stretch applies a transform, leaving the initial icon invisible.
 
-    /// <summary>
-    /// Creates a pause icon geometry (two vertical bars).
-    /// </summary>
-    public Geometry CreatePauseIcon()
-    {
-        var geometry = new PathGeometry();
-        
-        // Left bar
-        var leftFigure = new PathFigure { StartPoint = new Point(6, 4) };
-        leftFigure.Segments!.Add(new LineSegment { Point = new Point(10, 4) });
-        leftFigure.Segments!.Add(new LineSegment { Point = new Point(10, 16) });
-        leftFigure.Segments!.Add(new LineSegment { Point = new Point(6, 16) });
-        leftFigure.IsClosed = true;
-        geometry.Figures!.Add(leftFigure);
-        
-        // Right bar
-        var rightFigure = new PathFigure { StartPoint = new Point(14, 4) };
-        rightFigure.Segments!.Add(new LineSegment { Point = new Point(18, 4) });
-        rightFigure.Segments!.Add(new LineSegment { Point = new Point(18, 16) });
-        rightFigure.Segments!.Add(new LineSegment { Point = new Point(14, 16) });
-        rightFigure.IsClosed = true;
-        geometry.Figures!.Add(rightFigure);
-        
-        return geometry;
-    }
+    /// <summary>Creates a play icon geometry (triangle pointing right).</summary>
+    public Geometry CreatePlayIcon() =>
+        Geometry.Parse("M 6,4 L 6,16 L 18,10 Z");
 
-    /// <summary>
-    /// Creates a stop icon geometry (square).
-    /// </summary>
-    public Geometry CreateStopIcon()
-    {
-        return new RectangleGeometry { Rect = new Rect(6, 6, 12, 12) };
-    }
+    /// <summary>Creates a pause icon geometry (two vertical bars).</summary>
+    public Geometry CreatePauseIcon() =>
+        Geometry.Parse("M 6,4 L 10,4 L 10,16 L 6,16 Z M 14,4 L 18,4 L 18,16 L 14,16 Z");
 
-    /// <summary>
-    /// Creates a folder open icon geometry.
-    /// </summary>
-    public Geometry CreateFolderOpenIcon()
-    {
-        var geometry = new PathGeometry();
-        var figure = new PathFigure { StartPoint = new Point(4, 6) };
-        figure.Segments!.Add(new LineSegment { Point = new Point(4, 8) });
-        figure.Segments!.Add(new LineSegment { Point = new Point(6, 8) });
-        figure.Segments!.Add(new LineSegment { Point = new Point(8, 6) });
-        figure.Segments!.Add(new LineSegment { Point = new Point(16, 6) });
-        figure.Segments!.Add(new LineSegment { Point = new Point(18, 8) });
-        figure.Segments!.Add(new LineSegment { Point = new Point(18, 16) });
-        figure.Segments!.Add(new LineSegment { Point = new Point(4, 16) });
-        figure.Segments!.Add(new LineSegment { Point = new Point(4, 6) });
-        geometry.Figures!.Add(figure);
-        
-        // Add open flap
-        var flap = new PathFigure { StartPoint = new Point(4, 8) };
-        flap.Segments!.Add(new LineSegment { Point = new Point(6, 10) });
-        flap.Segments!.Add(new LineSegment { Point = new Point(18, 10) });
-        flap.Segments!.Add(new LineSegment { Point = new Point(18, 8) });
-        geometry.Figures!.Add(flap);
-        
-        return geometry;
-    }
+    /// <summary>Creates a stop icon geometry (square).</summary>
+    public Geometry CreateStopIcon() =>
+        Geometry.Parse("M 6,6 L 18,6 L 18,18 L 6,18 Z");
 
-    /// <summary>
-    /// Creates a volume high icon geometry (speaker with sound waves).
-    /// </summary>
-    public Geometry CreateVolumeHighIcon()
-    {
-        var geometry = new PathGeometry();
-        
-        // Speaker cone
-        var speaker = new PathFigure { StartPoint = new Point(5, 6) };
-        speaker.Segments!.Add(new LineSegment { Point = new Point(5, 14) });
-        speaker.Segments!.Add(new LineSegment { Point = new Point(9, 14) });
-        speaker.Segments!.Add(new LineSegment { Point = new Point(13, 18) });
-        speaker.Segments!.Add(new LineSegment { Point = new Point(13, 2) });
-        speaker.Segments!.Add(new LineSegment { Point = new Point(9, 6) });
-        speaker.Segments!.Add(new LineSegment { Point = new Point(5, 6) });
-        geometry.Figures!.Add(speaker);
-        
-        // Sound waves
-        var wave1 = new PathFigure { StartPoint = new Point(15, 8) };
-        wave1.Segments!.Add(new ArcSegment { Point = new Point(15, 12), Size = new Size(2, 2), SweepDirection = SweepDirection.Clockwise });
-        geometry.Figures!.Add(wave1);
-        
-        var wave2 = new PathFigure { StartPoint = new Point(17, 6) };
-        wave2.Segments!.Add(new ArcSegment { Point = new Point(17, 14), Size = new Size(3, 3), SweepDirection = SweepDirection.Clockwise });
-        geometry.Figures!.Add(wave2);
-        
-        return geometry;
-    }
+    /// <summary>Creates a folder open icon geometry.</summary>
+    public Geometry CreateFolderOpenIcon() =>
+        Geometry.Parse("M 4,6 L 4,8 L 6,8 L 8,6 L 16,6 L 18,8 L 18,16 L 4,16 Z M 4,8 L 6,10 L 18,10 L 18,8 Z");
 
-    /// <summary>
-    /// Creates a volume off icon geometry (speaker with X).
-    /// </summary>
-    public Geometry CreateVolumeOffIcon()
-    {
-        var geometry = new PathGeometry();
-        
-        // Speaker cone
-        var speaker = new PathFigure { StartPoint = new Point(5, 6) };
-        speaker.Segments!.Add(new LineSegment { Point = new Point(5, 14) });
-        speaker.Segments!.Add(new LineSegment { Point = new Point(9, 14) });
-        speaker.Segments!.Add(new LineSegment { Point = new Point(13, 18) });
-        speaker.Segments!.Add(new LineSegment { Point = new Point(13, 2) });
-        speaker.Segments!.Add(new LineSegment { Point = new Point(9, 6) });
-        speaker.Segments!.Add(new LineSegment { Point = new Point(5, 6) });
-        geometry.Figures!.Add(speaker);
-        
-        // X mark
-        var x1 = new PathFigure { StartPoint = new Point(15, 5) };
-        x1.Segments!.Add(new LineSegment { Point = new Point(19, 9) });
-        geometry.Figures!.Add(x1);
-        
-        var x2 = new PathFigure { StartPoint = new Point(15, 9) };
-        x2.Segments!.Add(new LineSegment { Point = new Point(19, 5) });
-        geometry.Figures!.Add(x2);
-        
-        return geometry;
-    }
+    /// <summary>Creates a volume high icon geometry (speaker with sound waves).</summary>
+    public Geometry CreateVolumeHighIcon() =>
+        Geometry.Parse("M 5,6 L 5,14 L 9,14 L 13,18 L 13,2 L 9,6 Z M 15,8 A 2,2 0 0,1 15,12 Z M 17,6 A 3,3 0 0,1 17,14 Z");
+
+    /// <summary>Creates a volume off icon geometry (speaker with X).</summary>
+    public Geometry CreateVolumeOffIcon() =>
+        Geometry.Parse("M 5,6 L 5,14 L 9,14 L 13,18 L 13,2 L 9,6 Z M 15,5 L 19,9 Z M 15,9 L 19,5 Z");
 }

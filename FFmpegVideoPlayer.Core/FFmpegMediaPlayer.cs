@@ -1,13 +1,8 @@
-using System;
 using System.Buffers;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using FFmpeg.AutoGen;
 
 namespace FFmpegVideoPlayer.Core;
@@ -385,9 +380,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
             _mediaSource = null;
         }
     }
-
-    private MediaSourceSession? ResetForOpen()
-        => CloseWhileOpenGateHeld();
 
     private bool OpenResolved(
         string path,
@@ -1129,6 +1121,9 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
             ObjectDisposedException.ThrowIf(_isDisposed, this);
             if (_isClosing || _formatContext == null) return;
 
+            // Play always leaves frame stepping, including after a paused seek.
+            _stepMode = false;
+
             if (_playbackThread is { IsAlive: false })
             {
                 _playbackThread = null;
@@ -1149,7 +1144,7 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                 _needsResync = true;
             }
 
-            if (_isPaused)
+            if (_isPaused && _isPlaying)
             {
                 CompletePauseTimingLocked();
                 _isPaused = false;
@@ -1162,6 +1157,7 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
 
             if (_isPlaying) return;
 
+            CompletePauseTimingLocked();
             _isPlaying = true;
             _isPaused = false;
             _cancellationTokenSource = new CancellationTokenSource();
@@ -1263,8 +1259,8 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
     /// </summary>
     public void Stop()
     {
-        // QueueSamples can be applying bounded backpressure while holding the native
-        // decode lock. Cancel first so it can leave that wait before Stop takes _lock.
+        // QueueSamples can be waiting for backend capacity. Cancel first so it can
+        // leave that wait before Stop joins the playback thread.
         try
         {
             Volatile.Read(ref _cancellationTokenSource)?.Cancel();
@@ -1311,6 +1307,7 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
 
             _isPlaying = false;
             _isPaused = false;
+            _stepMode = false;
             _position = 0;
             _startTime = 0;
             _playbackStartWallTime = 0;
@@ -1391,6 +1388,11 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
             _position = targetSec;
             _seekTargetPts = targetSec;
 
+            // An explicit seek after EOF chooses the next playback origin. Keeping
+            // Ended here would make Play rewind to zero and discard that choice.
+            if (_state == PlaybackState.Ended)
+                SetState(PlaybackState.Stopped);
+
             // Stop and reset audio player to reset sample counter
             _audioPlayer?.Stop();
 
@@ -1441,10 +1443,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
     }
 
     /// <summary>
-    /// Steps forward exactly one frame. Pauses playback after displaying the frame.
-    /// </summary>
-    /// <returns>True if a frame was successfully decoded and displayed, false otherwise.</returns>
-    /// <summary>
     /// Decodes and displays one frame at the current position without affecting playback state.
     /// Use after Seek() while paused to show the frame at the new position.
     /// </summary>
@@ -1463,6 +1461,10 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
         }
     }
 
+    /// <summary>
+    /// Steps forward exactly one frame. Pauses playback after displaying the frame.
+    /// </summary>
+    /// <returns>True if a frame was successfully decoded and displayed, false otherwise.</returns>
     public bool StepForward()
     {
         lock (_lock)
@@ -1965,17 +1967,8 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                     {
                         if (streamIndex == _audioStreamIndex)
                         {
-                            lock (_lock)
-                            {
-                                if (_audioCodecContext != null)
-                                {
-                                    ProcessAudioPacket(
-                                        stopwatch,
-                                        token,
-                                        _packet);
-                                    audioPacketsProcessed++;
-                                }
-                            }
+                            ProcessAudioPacket(stopwatch, token, _packet);
+                            audioPacketsProcessed++;
                         }
                         else if (streamIndex == _videoStreamIndex)
                         {
@@ -2010,9 +2003,9 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
 
             if (reachedNaturalEnd && _audioPlayer is not null)
             {
+                FlushAudioPipeline(stopwatch, token);
                 lock (_lock)
                 {
-                    FlushAudioPipeline(stopwatch, token);
                     _audioPlayer?.CompleteInput();
                 }
 
@@ -2201,6 +2194,11 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
     {
         lock (_lock)
         {
+            if (_stepMode)
+                return new VideoPresentationTiming(
+                    new VideoTimingDecision(VideoTimingAction.Present),
+                    UsesAudioMaster: false);
+
             var hasAudioMaster = TryGetAudioMediaClock(out var masterClock);
             if (hasAudioMaster)
             {
@@ -2388,53 +2386,46 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                     lastVideoPts = frameTime;
                 }
 
-                // Convert to BGRA
-                ffmpeg.sws_scale(_swsContext,
-                    _frame->data, _frame->linesize, 0, _videoHeight,
-                    _rgbFrame->data, _rgbFrame->linesize);
-
-                // Check pending frames
-                if (!_pendingFrames.TryAcquire(out pendingFrameLease))
-                {
-                    continue;
-                }
-
-                // Copy frame buffer while holding lock (accessing native _rgbFrame)
-                var stride = _rgbFrame->linesize[0];
-                var width = _videoWidth;
-                var height = _videoHeight;
-                var bufferSize = _rgbBufferSize;
-
-                byte[]? frameBuffer = null;
-                try
-                {
-                    frameBuffer = ArrayPool<byte>.Shared.Rent(bufferSize);
-                    Marshal.Copy((IntPtr)_rgbFrame->data[0], frameBuffer, 0, bufferSize);
-                }
-                catch
-                {
-                    if (frameBuffer != null) ArrayPool<byte>.Shared.Return(frameBuffer);
-                    pendingFrameLease!.Dispose();
-                    continue;
-                }
-
                 frameMediaGeneration = MediaGeneration;
                 frameTimelineGeneration = TimelineGeneration;
 
-                eventArgs = new FrameEventArgs(
-                    frameBuffer, width, height, stride, bufferSize,
-                    pooled: true,
-                    releaseAction: buffer => ArrayPool<byte>.Shared.Return(buffer),
-                    mediaGeneration: frameMediaGeneration,
-                    timelineGeneration: frameTimelineGeneration);
+                // A full UI queue may discard the image, but must still honor this
+                // frame's presentation time. Skipping the timing wait consumes the
+                // rest of a video-only clip as fast as it can be decoded and parks
+                // the next deliverable frame far ahead of the playback clock.
+                if (_pendingFrames.TryAcquire(out pendingFrameLease))
+                {
+                    ffmpeg.sws_scale(_swsContext,
+                        _frame->data, _frame->linesize, 0, _videoHeight,
+                        _rgbFrame->data, _rgbFrame->linesize);
 
+                    // Copy while holding the lock that protects native _rgbFrame.
+                    var stride = _rgbFrame->linesize[0];
+                    var width = _videoWidth;
+                    var height = _videoHeight;
+                    var bufferSize = _rgbBufferSize;
+
+                    byte[]? frameBuffer = null;
+                    try
+                    {
+                        frameBuffer = ArrayPool<byte>.Shared.Rent(bufferSize);
+                        Marshal.Copy((IntPtr)_rgbFrame->data[0], frameBuffer, 0, bufferSize);
+                    }
+                    catch
+                    {
+                        if (frameBuffer != null) ArrayPool<byte>.Shared.Return(frameBuffer);
+                        pendingFrameLease!.Dispose();
+                        continue;
+                    }
+
+                    eventArgs = new FrameEventArgs(
+                        frameBuffer, width, height, stride, bufferSize,
+                        pooled: true,
+                        releaseAction: buffer => ArrayPool<byte>.Shared.Return(buffer),
+                        mediaGeneration: frameMediaGeneration,
+                        timelineGeneration: frameTimelineGeneration);
+                }
             } // === lock released here ===
-
-            if (eventArgs is null)
-            {
-                pendingFrameLease?.Dispose();
-                continue;
-            }
 
             // Wait in bounded slices OUTSIDE the native decode lock. Re-sample the
             // clock after every slice. Only an established audio master gets a total
@@ -2505,9 +2496,13 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                     frameTimelineGeneration)
                 || timing.Decision.Action == VideoTimingAction.Drop)
             {
-                ReleasePendingFrame(eventArgs, pendingFrameLease!);
+                if (eventArgs is not null)
+                    ReleasePendingFrame(eventArgs, pendingFrameLease!);
                 continue;
             }
+
+            if (eventArgs is null)
+                continue;
 
             // Commit presentation state only after timing has approved this frame.
             // A source replacement can invalidate the decoded buffer while we wait.
@@ -2528,9 +2523,12 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
 
                 if (_stepMode)
                 {
+                    _stepMode = false;
                     _isPaused = true;
                     BeginPauseTimingLocked();
                     _audioPlayer?.Pause();
+                    SetState(PlaybackState.Paused);
+                    RaiseSynchronized(() => Paused?.Invoke(this, EventArgs.Empty));
                 }
 
                 CacheFrame(
@@ -2554,17 +2552,97 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
         CancellationToken cancellationToken,
         AVPacket* packet)
     {
+        IAudioPlayer? audioPlayer;
+        long mediaGeneration;
+        long timelineGeneration;
+        List<DecodedAudioFrame> frames;
+        lock (_lock)
+        {
+            audioPlayer = _audioPlayer;
+            if (audioPlayer is null || _audioCodecContext == null)
+                return;
+            mediaGeneration = MediaGeneration;
+            timelineGeneration = TimelineGeneration;
+            frames = DecodeAudioPacket(cancellationToken, packet);
+        }
+
+        foreach (var frame in frames)
+        {
+            if (!QueueAudioFrame(
+                    frame, audioPlayer, stopwatch, cancellationToken,
+                    mediaGeneration, timelineGeneration))
+                return;
+        }
+    }
+
+    private readonly record struct DecodedAudioFrame(
+        short[] Samples,
+        int SampleCount,
+        double? MediaTime);
+
+    private bool QueueAudioFrame(
+        DecodedAudioFrame frame,
+        IAudioPlayer audioPlayer,
+        Stopwatch stopwatch,
+        CancellationToken cancellationToken,
+        long mediaGeneration,
+        long timelineGeneration)
+    {
+        if (!WaitUntilPlaybackResumed(cancellationToken, mediaGeneration, timelineGeneration))
+            return false;
+
+        // Bounded audio queues can wait for the output device. Never hold the
+        // native decode lock during that wait: Pause, Play and Seek need it to
+        // change the state that allows a full or paused queue to make progress.
+        fixed (short* samples = frame.Samples)
+            audioPlayer.QueueSamplesS16(samples, frame.SampleCount, cancellationToken);
+
+        lock (_lock)
+        {
+            if (!IsFrameGenerationCurrent(mediaGeneration, timelineGeneration)
+                || !ReferenceEquals(audioPlayer, _audioPlayer))
+                return false;
+
+            if (!_hasAudioClock && frame.MediaTime is { } audioTime)
+            {
+                _audioStartPts = audioTime;
+                _hasAudioClock = true;
+                if (_videoStreamIndex < 0)
+                {
+                    _startTime = audioTime;
+                    _playbackStartWallTime = GetActivePlaybackElapsedSecondsLocked(stopwatch);
+                    _needsResync = false;
+                }
+                _logger.Log("FFmpegMediaPlayer", "FirstAudioFrame", new { AudioTime = audioTime });
+            }
+            _logger.Log("FFmpegMediaPlayer", "AudioQueued", new
+            {
+                OutputSamples = frame.SampleCount,
+                AudioTime = frame.MediaTime,
+                Format = "S16"
+            });
+        }
+        return true;
+    }
+
+    // Called with _lock held. The returned PCM owns managed buffers, so native
+    // decoding/resampling and potentially blocking output can run in two phases.
+    private List<DecodedAudioFrame> DecodeAudioPacket(
+        CancellationToken cancellationToken,
+        AVPacket* packet)
+    {
+        var frames = new List<DecodedAudioFrame>();
         if (_audioPlayer == null)
         {
             Debug.WriteLine("[FFmpegMediaPlayer] ProcessAudioPacket: _audioPlayer is null!");
             _logger.Log("FFmpegMediaPlayer", "ProcessAudioPacketFailed", new { Reason = "AudioPlayer is null" });
-            return;
+            return frames;
         }
         if (ffmpeg.avcodec_send_packet(_audioCodecContext, packet) < 0)
         {
             Debug.WriteLine("[FFmpegMediaPlayer] ProcessAudioPacket: avcodec_send_packet failed");
             _logger.Log("FFmpegMediaPlayer", "ProcessAudioPacketFailed", new { Reason = "avcodec_send_packet failed" });
-            return;
+            return frames;
         }
 
         var tempFrame = ffmpeg.av_frame_alloc();
@@ -2578,7 +2656,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                 var samples = tempFrame->nb_samples;
                 var channels = _audioCodecContext->ch_layout.nb_channels;
                 var sampleRate = _audioCodecContext->sample_rate;
-                var establishesAudioClock = false;
                 double audioTime = 0;
 
                 // Get audio PTS and convert to seconds
@@ -2592,19 +2669,6 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                     // at the preceding keyframe. Video has its own matching guard.
                     if (_seekTargetPts >= 0 && audioTime + SeekTargetEpsilon < _seekTargetPts)
                         continue;
-
-                    // A decoded timestamp is only a candidate clock origin. The clock
-                    // becomes valid below, after the corresponding PCM reaches the backend.
-                    if (!_hasAudioClock)
-                    {
-                        _audioStartPts = audioTime;
-                        establishesAudioClock = true;
-                        if (_videoStreamIndex < 0)
-                        {
-                            _startTime = audioTime;
-                            _playbackStartWallTime = GetActivePlaybackElapsedSecondsLocked(stopwatch);
-                        }
-                    }
 
                     // Audio is the master clock - let it play continuously without sync adjustments.
                     // Video timing is controlled separately in ProcessVideoPacket to stay in sync.
@@ -2639,35 +2703,10 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                             // Queue the S16 samples directly
                             // convertedSamples is per-channel, so for stereo we have convertedSamples * 2 total samples
                             // QueueSamplesS16 expects total sample count (stereo interleaved: L, R, L, R, ...)
-                            _audioPlayer.QueueSamplesS16(
-                                outPtr,
+                            frames.Add(new DecodedAudioFrame(
+                                outData,
                                 convertedSamples * 2,
-                                cancellationToken);
-
-                            if (establishesAudioClock)
-                            {
-                                _hasAudioClock = true;
-                                if (_videoStreamIndex < 0)
-                                    _needsResync = false;
-
-                                _logger.Log("FFmpegMediaPlayer", "FirstAudioFrame", new
-                                {
-                                    AudioTime = audioTime,
-                                    PTS = pts,
-                                    Samples = samples,
-                                    SampleRate = sampleRate,
-                                    Channels = channels
-                                });
-                            }
-
-                            _logger.Log("FFmpegMediaPlayer", "AudioQueued", new 
-                            { 
-                                InputSamples = samples,
-                                ConvertedSamples = convertedSamples,
-                                OutputSamples = convertedSamples * 2,
-                                AudioTime = pts != ffmpeg.AV_NOPTS_VALUE ? pts * _audioTimeBase.num / (double)_audioTimeBase.den : 0,
-                                Format = "S16"
-                            });
+                                pts != ffmpeg.AV_NOPTS_VALUE ? audioTime : null));
                         }
                     }
                 }
@@ -2681,7 +2720,7 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
                         Samples = samples,
                         Channels = channels
                     });
-                    return;
+                    return frames;
                 }
             }
         }
@@ -2689,6 +2728,7 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
         {
             ffmpeg.av_frame_free(&tempFrame);
         }
+        return frames;
     }
 
     private void CloseInternal()
@@ -2774,6 +2814,7 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
         _pauseStartTime = 0;
         _playbackStopwatch = null;
         _seekTargetPts = -1;
+        _stepMode = false;
     }
 
     /// <summary>
@@ -2834,46 +2875,53 @@ public sealed unsafe partial class FFmpegMediaPlayer : IDisposable, IAsyncDispos
         Stopwatch stopwatch,
         CancellationToken cancellationToken)
     {
-        if (_audioPlayer == null || _audioCodecContext == null)
-            return;
-
         // A null packet tells FFmpeg to emit delayed codec frames.
         ProcessAudioPacket(
             stopwatch,
             cancellationToken,
             null);
 
-        if (_swrContext == null)
+        IAudioPlayer? audioPlayer;
+        long mediaGeneration;
+        long timelineGeneration;
+        lock (_lock)
+        {
+            audioPlayer = _audioPlayer;
+            mediaGeneration = MediaGeneration;
+            timelineGeneration = TimelineGeneration;
+        }
+        if (audioPlayer is null)
             return;
 
-        var sampleRate = _audioCodecContext->sample_rate;
         var outputPlanes = stackalloc byte*[1];
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var delayedSamples = ffmpeg.swr_get_delay(_swrContext, sampleRate);
-            if (delayedSamples <= 0)
-                break;
-
-            var outputCapacity = checked((int)Math.Min(delayedSamples, int.MaxValue / 2));
-            var output = new short[outputCapacity * 2];
-            fixed (short* outputPointer = output)
+            DecodedAudioFrame frame;
+            lock (_lock)
             {
-                outputPlanes[0] = (byte*)outputPointer;
-                var convertedSamples = ffmpeg.swr_convert(
-                    _swrContext,
-                    outputPlanes,
-                    outputCapacity,
-                    null,
-                    0);
-                if (convertedSamples <= 0)
-                    break;
-
-                _audioPlayer.QueueSamplesS16(
-                    outputPointer,
-                    convertedSamples * 2,
-                    cancellationToken);
+                if (!IsFrameGenerationCurrent(mediaGeneration, timelineGeneration)
+                    || _swrContext == null || _audioCodecContext == null)
+                    return;
+                var sampleRate = _audioCodecContext->sample_rate;
+                var delayedSamples = ffmpeg.swr_get_delay(_swrContext, sampleRate);
+                if (delayedSamples <= 0)
+                    return;
+                var outputCapacity = checked((int)Math.Min(delayedSamples, int.MaxValue / 2));
+                var output = new short[outputCapacity * 2];
+                fixed (short* outputPointer = output)
+                {
+                    outputPlanes[0] = (byte*)outputPointer;
+                    var convertedSamples = ffmpeg.swr_convert(
+                        _swrContext, outputPlanes, outputCapacity, null, 0);
+                    if (convertedSamples <= 0)
+                        return;
+                    frame = new DecodedAudioFrame(output, convertedSamples * 2, null);
+                }
             }
+            if (!QueueAudioFrame(frame, audioPlayer, stopwatch, cancellationToken,
+                    mediaGeneration, timelineGeneration))
+                return;
         }
     }
 

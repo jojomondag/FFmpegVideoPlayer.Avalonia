@@ -3,7 +3,6 @@ using System.Runtime.InteropServices;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
-using Avalonia.Platform;
 using FFmpegVideoPlayer.Core;
 
 namespace Avalonia.FFmpegVideoPlayer;
@@ -126,31 +125,7 @@ public class CpuVideoRenderer : Control, IVideoRenderer
 
         try
         {
-            using (var fb = _bitmap.Lock())
-            {
-                var destPtr = fb.Address;
-                
-                for (int y = 0; y < height; y++)
-                {
-                    var sourceOffset = y * stride;
-                    var destOffset = y * fb.RowBytes;
-                    var maxRowLength = Math.Min(stride, fb.RowBytes);
-                    var rowLength = Math.Min(width * 4, maxRowLength);
-                    
-                    if (rowLength > 0)
-                    {
-                        unsafe
-                        {
-                            Buffer.MemoryCopy(
-                                (void*)(frameData + sourceOffset),
-                                (void*)(destPtr + destOffset),
-                                rowLength,
-                                rowLength);
-                        }
-                    }
-                }
-            }
-
+            BitmapVideoFrame.Copy(_bitmap, frameData, width, height, stride);
             InvalidateVisual();
         }
         catch (Exception ex)
@@ -175,24 +150,7 @@ public class CpuVideoRenderer : Control, IVideoRenderer
 
         try
         {
-            using (var fb = _bitmap.Lock())
-            {
-                var destPtr = fb.Address;
-                
-                for (int y = 0; y < height; y++)
-                {
-                    var sourceOffset = y * stride;
-                    var destOffset = y * fb.RowBytes;
-                    var maxRowLength = Math.Min(stride, fb.RowBytes);
-                    var rowLength = Math.Min(width * 4, maxRowLength);
-                    
-                    if (rowLength > 0 && sourceOffset + rowLength <= frameData.Length)
-                    {
-                        Marshal.Copy(frameData, sourceOffset, destPtr + destOffset, rowLength);
-                    }
-                }
-            }
-
+            BitmapVideoFrame.Copy(_bitmap, frameData, width, height, stride);
             InvalidateVisual();
         }
         catch (Exception ex)
@@ -205,19 +163,7 @@ public class CpuVideoRenderer : Control, IVideoRenderer
     {
         if (_bitmap != null)
         {
-            using (var fb = _bitmap.Lock())
-            {
-                unsafe
-                {
-                    // Clear to transparent (all zeros = transparent black)
-                    var ptr = (byte*)fb.Address;
-                    var size = fb.RowBytes * Height;
-                    for (int i = 0; i < size; i++)
-                    {
-                        ptr[i] = 0;
-                    }
-                }
-            }
+            BitmapVideoFrame.Clear(_bitmap, Height);
             InvalidateVisual();
         }
     }
@@ -234,12 +180,50 @@ public class CpuVideoRenderer : Control, IVideoRenderer
         if (_bitmap != null && Bounds.Width > 0 && Bounds.Height > 0 && _width > 0 && _height > 0)
         {
             var sourceRect = new Rect(0, 0, _width, _height);
-            var destRect = CalculateDestinationRect(sourceRect, Bounds, _stretch);
+            var destRect = BitmapVideoFrame.CalculateDestinationRect(sourceRect, Bounds, _stretch);
             context.DrawImage(_bitmap, sourceRect, destRect);
         }
     }
 
-    private static Rect CalculateDestinationRect(Rect sourceRect, Rect bounds, Stretch stretch)
+}
+
+// Shared bitmap operations for the CPU and OpenGL compatibility controls.
+internal static class BitmapVideoFrame
+{
+    internal static unsafe void Copy(WriteableBitmap bitmap, IntPtr source, int width, int height, int stride)
+    {
+        using var frame = bitmap.Lock();
+        var rowLength = Math.Min(width * 4, Math.Min(stride, frame.RowBytes));
+        if (rowLength <= 0) return;
+
+        for (var y = 0; y < height; y++)
+            Buffer.MemoryCopy((void*)(source + y * stride), (void*)(frame.Address + y * frame.RowBytes),
+                rowLength, rowLength);
+    }
+
+    internal static void Copy(WriteableBitmap bitmap, byte[] source, int width, int height, int stride)
+    {
+        using var frame = bitmap.Lock();
+        var rowLength = Math.Min(width * 4, Math.Min(stride, frame.RowBytes));
+        if (rowLength <= 0) return;
+
+        for (var y = 0; y < height; y++)
+        {
+            var sourceOffset = y * stride;
+            if (sourceOffset + rowLength <= source.Length)
+                Marshal.Copy(source, sourceOffset, frame.Address + y * frame.RowBytes, rowLength);
+        }
+    }
+
+    internal static unsafe void Clear(WriteableBitmap bitmap, int height)
+    {
+        using var frame = bitmap.Lock();
+        var size = frame.RowBytes * height;
+        if (size > 0)
+            new Span<byte>((void*)frame.Address, size).Clear();
+    }
+
+    internal static Rect CalculateDestinationRect(Rect sourceRect, Rect bounds, Stretch stretch)
     {
         var sourceAspect = sourceRect.Width / sourceRect.Height;
         var boundsAspect = bounds.Width / bounds.Height;
