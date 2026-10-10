@@ -6,6 +6,25 @@ namespace FFmpegVideoPlayer.Tests;
 public sealed class PlayerLifecycleTests
 {
     [Fact]
+    public async Task Audio_reset_stops_before_restoring_volume_and_tolerates_backend_failure()
+    {
+        await using var player = new FFmpegMediaPlayer { Volume = 37 };
+        var audio = new RecordingAudioPlayer();
+        player.AudioPlayer = audio;
+        Assert.Equal(new[] { "Volume", "Stop" }, audio.Calls);
+
+        audio.Calls.Clear();
+        player.ResetAudioPlayerState();
+        Assert.Equal(new[] { "Stop", "Volume" }, audio.Calls);
+        Assert.Equal(0.37f, audio.Volume);
+
+        audio.Calls.Clear();
+        audio.FailStop = true;
+        player.ResetAudioPlayerState();
+        Assert.Equal(new[] { "Stop" }, audio.Calls);
+    }
+
+    [Fact]
     public async Task Pre_cancelled_open_does_not_change_the_existing_state_or_invoke_the_factory()
     {
         var factoryCalled = false;
@@ -86,5 +105,25 @@ public sealed class PlayerLifecycleTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => opening);
         await player.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
         Assert.Equal(PlaybackState.Disposed, player.State);
+    }
+
+    private sealed class RecordingAudioPlayer : IAudioPlayer
+    {
+        public List<string> Calls { get; } = [];
+        public float Volume { get; private set; }
+        public bool FailStop { get; set; }
+        public void SetVolume(float volume) { Volume = volume; Calls.Add("Volume"); }
+        public void Stop()
+        {
+            Calls.Add("Stop");
+            if (FailStop)
+                throw new InvalidOperationException("Synthetic backend failure.");
+        }
+        public void Resume() => Calls.Add("Resume");
+        public void Pause() { }
+        public double GetPlaybackTime() => 0;
+        public unsafe void QueueSamplesS16(short* samples, int sampleCount) { }
+        public void QueueSamples(float[] samples) { }
+        public void Dispose() { }
     }
 }

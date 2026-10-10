@@ -31,9 +31,8 @@
         </DrawingBrush>
     </Window.Resources>
     
-    <Grid RowDefinitions="Auto,*,Auto">
-        <!-- Header -->
-        <Border Grid.Row="0" Background="#2d2d2d" Padding="15">
+    <Grid RowDefinitions="Auto,*">
+        <Border Background="#2d2d2d" Padding="15">
             <StackPanel Orientation="Horizontal" Spacing="20" HorizontalAlignment="Center">
                 <CheckBox x:Name="ShowControlsCheckBox" 
                           Content="Show Controls" 
@@ -54,14 +53,12 @@
                     <ComboBoxItem>Uniform</ComboBoxItem>
                     <ComboBoxItem>UniformToFill</ComboBoxItem>
                 </ComboBox>
-                <Button x:Name="ShortcutsButton"
-                        Content="Shortcuts"
+                <Button Content="Shortcuts"
                         Click="OnShortcutsClick"
                         VerticalAlignment="Center"/>
             </StackPanel>
         </Border>
         
-        <!-- Video Player Control -->
         <Border Grid.Row="1" Background="#1a1a2e" Margin="10" Padding="20" BorderBrush="#444466" BorderThickness="2" CornerRadius="8">
             <Grid>
                 <!-- Background grid pattern to show transparency/stretch effects -->

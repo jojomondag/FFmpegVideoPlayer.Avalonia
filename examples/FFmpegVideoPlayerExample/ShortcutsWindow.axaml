@@ -10,20 +10,20 @@
     <StackPanel Margin="20" Spacing="10">
         <TextBlock Text="Keyboard Shortcuts" FontSize="20" FontWeight="Bold" Margin="0,0,0,10"/>
         
-        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
-            <TextBlock Grid.Row="0" Grid.Column="0" Text="Space" FontWeight="Bold" Margin="0,0,20,5"/>
-            <TextBlock Grid.Row="0" Grid.Column="1" Text="Play / Pause"/>
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+            <TextBlock Text="Space" FontWeight="Bold" Margin="0,0,20,5"/>
+            <TextBlock Grid.Column="1" Text="Play / Pause"/>
             
-            <TextBlock Grid.Row="1" Grid.Column="0" Text="Left / Right" FontWeight="Bold" Margin="0,0,20,5"/>
+            <TextBlock Grid.Row="1" Text="Left / Right" FontWeight="Bold" Margin="0,0,20,5"/>
             <TextBlock Grid.Row="1" Grid.Column="1" Text="Seek -/+ 5 seconds"/>
             
-            <TextBlock Grid.Row="2" Grid.Column="0" Text="Ctrl + Left / Right" FontWeight="Bold" Margin="0,0,20,5"/>
+            <TextBlock Grid.Row="2" Text="Ctrl + Left / Right" FontWeight="Bold" Margin="0,0,20,5"/>
             <TextBlock Grid.Row="2" Grid.Column="1" Text="Seek -/+ 30 seconds"/>
             
-            <TextBlock Grid.Row="3" Grid.Column="0" Text="Up / Down" FontWeight="Bold" Margin="0,0,20,5"/>
+            <TextBlock Grid.Row="3" Text="Up / Down" FontWeight="Bold" Margin="0,0,20,5"/>
             <TextBlock Grid.Row="3" Grid.Column="1" Text="Volume Up / Down"/>
             
-            <TextBlock Grid.Row="4" Grid.Column="0" Text="M" FontWeight="Bold" Margin="0,0,20,5"/>
+            <TextBlock Grid.Row="4" Text="M" FontWeight="Bold" Margin="0,0,20,5"/>
             <TextBlock Grid.Row="4" Grid.Column="1" Text="Mute / Unmute"/>
         </Grid>
         

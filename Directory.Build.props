@@ -1,7 +1,9 @@
 <Project>
   <PropertyGroup>
-    <Version>3.1.0-preview.2</Version>
+    <Version>3.1.0-preview.3</Version>
     <AvaloniaVersion>12.1.0</AvaloniaVersion>
+    <TargetFramework>net10.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -10,11 +12,4 @@
     <!-- Keep generated verification/build output out of SDK default items. -->
     <DefaultItemExcludes>$(DefaultItemExcludes);artifacts\**</DefaultItemExcludes>
   </PropertyGroup>
-
-  <ItemGroup>
-    <Compile Remove="artifacts\**" />
-    <EmbeddedResource Remove="artifacts\**" />
-    <None Remove="artifacts\**" />
-    <Content Remove="artifacts\**" />
-  </ItemGroup>
 </Project>

@@ -2,7 +2,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:local="clr-namespace:Avalonia.FFmpegVideoPlayer"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="500"
              x:Class="Avalonia.FFmpegVideoPlayer.VideoPlayerControl"
              x:Name="Root"
@@ -35,43 +34,12 @@
             <Setter Property="Background" Value="#28000000"/>
         </Style>
 
-        <!-- Legacy mediaButton style kept for backward compat -->
-        <Style Selector="Button.mediaButton">
-            <Setter Property="Background" Value="#e8e8e8"/>
-            <Setter Property="Foreground" Value="#333333"/>
-            <Setter Property="BorderBrush" Value="#999999"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="{Binding ButtonPadding, ElementName=Root}"/>
-            <Setter Property="CornerRadius" Value="{Binding ButtonCornerRadius, ElementName=Root}"/>
-            <Setter Property="Template">
-                <ControlTemplate>
-                    <Border Background="{TemplateBinding Background}"
-                            BorderBrush="{TemplateBinding BorderBrush}"
-                            BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="{TemplateBinding CornerRadius}"
-                            Padding="{TemplateBinding Padding}">
-                        <ContentPresenter Content="{TemplateBinding Content}"
-                                          HorizontalAlignment="Center"
-                                          VerticalAlignment="Center"/>
-                    </Border>
-                </ControlTemplate>
-            </Setter>
-        </Style>
-        <Style Selector="Button.mediaButton:pointerover">
-            <Setter Property="Background" Value="#d0d0d0"/>
-            <Setter Property="BorderBrush" Value="#666666"/>
-        </Style>
-        <Style Selector="Button.mediaButton:pressed">
-            <Setter Property="Background" Value="#c0c0c0"/>
-        </Style>
     </UserControl.Styles>
 
     <!-- Video + controls overlay in same cell so controls match video width -->
     <Grid>
         <!-- Video View -->
-        <Border Name="VideoBorder" Background="{Binding VideoBackground, ElementName=Root}">
-            <Image Name="VideoImage" Stretch="Uniform" />
-        </Border>
+        <Border Name="VideoBorder" Background="{Binding VideoBackground, ElementName=Root}"/>
 
         <!-- Controls Panel - overlaid at bottom of video -->
         <Border Name="ControlPanelBorder"

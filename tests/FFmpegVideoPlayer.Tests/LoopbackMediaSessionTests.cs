@@ -78,6 +78,31 @@ public sealed class LoopbackMediaSessionTests
         Assert.True(stopwatch.Elapsed > idleTimeout, $"Elapsed {stopwatch.Elapsed}.");
     }
 
+    [Theory]
+    [InlineData("GET")]
+    [InlineData("HEAD")]
+    public async Task Unsatisfiable_ranges_report_length_without_opening_media(string method)
+    {
+        var opened = false;
+        await using var session = new LoopbackMediaSession("media.mp4",
+            [new MediaResource("media.mp4", "video/mp4", 10, _ =>
+            {
+                opened = true;
+                return ValueTask.FromResult<Stream>(new MemoryStream(new byte[10]));
+            })]);
+        using var client = new HttpClient();
+        using var request = new HttpRequestMessage(new HttpMethod(method), session.PlaybackUrl);
+        request.Headers.Range = new RangeHeaderValue(10, null);
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.RequestedRangeNotSatisfiable, response.StatusCode);
+        Assert.Equal(10, response.Content.Headers.ContentRange?.Length);
+        Assert.Equal(0, response.Content.Headers.ContentLength);
+        Assert.Empty(await response.Content.ReadAsByteArrayAsync());
+        Assert.False(opened);
+    }
+
     [Fact]
     public async Task Bounds_non_cooperative_upstream_open_and_disposes_a_late_stream()
     {

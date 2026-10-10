@@ -1,33 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>false</IsPackable>
-    
-    <!-- NuGet Package Properties -->
-    <PackageId>FFmpegVideoPlayer.Core</PackageId>
-    <AssemblyName>FFmpegVideoPlayer.Core</AssemblyName>
-    <RootNamespace>FFmpegVideoPlayer.Core</RootNamespace>
-    <Authors>jojomondag</Authors>
-    <Company>jojomondag</Company>
-    <Description>Core FFmpeg video player logic without UI dependencies. Use this package for non-Avalonia projects or custom UI implementations.</Description>
-    <PackageTags>ffmpeg;video;player;media;cross-platform;arm64;core;logic</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/jojomondag/FFmpegVideoPlayer.Avalonia</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/jojomondag/FFmpegVideoPlayer.Avalonia</RepositoryUrl>
-    
-    <!-- Generate XML documentation -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- FFmpeg bindings for .NET - cross-platform including ARM64 -->
-    <!-- Using version 8.0.0 which expects FFmpeg 8.x libraries (libavcodec.62) -->
     <PackageReference Include="FFmpeg.AutoGen" Version="8.0.0.1" />
     <PackageReference Include="YoutubeExplode" Version="6.6.0" />
   </ItemGroup>
-
 </Project>
 

@@ -1,154 +1,56 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    
-    <!-- NuGet Package Properties -->
     <PackageId>FFmpegVideoPlayer.Avalonia</PackageId>
     <AssemblyName>Avalonia.FFmpegVideoPlayer</AssemblyName>
     <RootNamespace>Avalonia.FFmpegVideoPlayer</RootNamespace>
     <IsPackable>true</IsPackable>
     <Authors>jojomondag</Authors>
     <Company>jojomondag</Company>
-    <Description>Standalone FFmpeg media player for Avalonia 12. Bundles FFmpeg for Windows x64; other OS/architectures use a compatible system FFmpeg installation.</Description>
-    <PackageReleaseNotes>v3.1.0-preview.2: Centralizes standalone build output and provides package-preserving cleanup. Adds reusable playback and audio-output diagnostics, Material playback icons, best-effort asynchronous multi-player shutdown, and common media extension classification. Preserves the Avalonia 12 player and FFmpeg 8 native runtime requirements.</PackageReleaseNotes>
+    <Description>Standalone FFmpeg media player for Avalonia 12 and .NET 10. Bundles FFmpeg for Windows x64; other OS/architectures use a compatible system FFmpeg installation.</Description>
+    <PackageReleaseNotes>Targets .NET 10 only. Removes unused legacy rendering, consolidates bitmap rendering and playback helpers, and reduces diagnostic allocations while preserving the player API and playback behavior.</PackageReleaseNotes>
     <PackageTags>avalonia;ffmpeg;video;audio;player;media;cross-platform;windows-x64;system-ffmpeg</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/jojomondag/FFmpegVideoPlayer.Avalonia</PackageProjectUrl>
     <RepositoryUrl>https://github.com/jojomondag/FFmpegVideoPlayer.Avalonia</RepositoryUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    
-    <!-- Generate XML documentation -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
-    
     <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);PackProjectReferenceOutputs</TargetsForTfmSpecificBuildOutput>
+    <DefaultItemExcludes>$(DefaultItemExcludes);examples/**;tests/**;FFmpegVideoPlayer.Core/**;FFmpegVideoPlayer.Audio.OpenTK/**</DefaultItemExcludes>
   </PropertyGroup>
 
-  <!-- Exclude examples folder, Core files, and Audio.OpenTK from compilation -->
-  <ItemGroup>
-    <Compile Remove="examples/**/*.cs" />
-    <AvaloniaXaml Remove="examples/**/*.axaml" />
-    <AvaloniaResource Remove="examples/**/*" />
-    <None Remove="examples/**/*" />
-    <Compile Remove="tests/**/*.cs" />
-    <AvaloniaXaml Remove="tests/**/*.axaml" />
-    <AvaloniaResource Remove="tests/**/*" />
-    <None Remove="tests/**/*" />
-    <!-- Remove Core project files - they're in a separate project -->
-    <Compile Remove="FFmpegVideoPlayer.Core/**/*.cs" />
-    <!-- Audio and legacy rendering have their own implementation projects. -->
-    <Compile Remove="FFmpegVideoPlayer.Audio.OpenTK/**/*.cs" />
-    <Compile Remove="FFmpegVideoPlayer.Rendering.OpenGL/**/*.cs" />
-  </ItemGroup>
-
+  <!-- Declare the dependencies of the embedded implementation assemblies. -->
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="[$(AvaloniaVersion),13.0.0)" />
     <PackageReference Include="FFmpeg.AutoGen" Version="8.0.0.1" />
     <PackageReference Include="YoutubeExplode" Version="6.6.0" />
     <PackageReference Include="OpenTK.Audio.OpenAL" Version="4.9.4" />
     <PackageReference Include="OpenAL.Soft" Version="1.23.1" GeneratePathProperty="true" PrivateAssets="all" />
+    <ProjectReference Include="FFmpegVideoPlayer.Core/FFmpegVideoPlayer.Core.csproj" PrivateAssets="all" />
+    <ProjectReference Include="FFmpegVideoPlayer.Audio.OpenTK/FFmpegVideoPlayer.Audio.OpenTK.csproj" PrivateAssets="all" />
   </ItemGroup>
 
-  <!-- Core + OpenTK audio (OpenAL) so playback has sound by default; override via AudioPlayerFactory property if needed -->
   <ItemGroup>
-    <ProjectReference Include="FFmpegVideoPlayer.Core\FFmpegVideoPlayer.Core.csproj" PrivateAssets="all" />
-    <ProjectReference Include="FFmpegVideoPlayer.Audio.OpenTK\FFmpegVideoPlayer.Audio.OpenTK.csproj" PrivateAssets="all" />
+    <None Include="README.md;THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="" />
+    <None Include="LICENSES/*.txt" Pack="true" PackagePath="LICENSES/" />
+    <None Include="build/FFmpegVideoPlayer.Avalonia.targets" Pack="true" PackagePath="build/;buildTransitive/" />
+    <None Include="runtimes/**/*.dll;runtimes/**/*.dylib;runtimes/**/*.so*"
+          Pack="true" PackagePath="runtimes/%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- OpenAL.Soft stores binaries below Release; flatten that level in our package. -->
+    <_OpenALRuntime Include="win-x64;win-x86;win-arm64">
+      <RuntimePath>runtimes/%(Identity)/native/OpenAL32.dll</RuntimePath>
+    </_OpenALRuntime>
+    <None Include="@(_OpenALRuntime->'$(PkgOpenAL_Soft)/runtimes/%(Identity)/native/Release/OpenAL32.dll')"
+          Pack="true" PackagePath="%(RuntimePath)"
+          Link="%(RuntimePath)" TargetPath="%(RuntimePath)"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <!-- Include documentation, third-party license texts, and images in package -->
-  <ItemGroup>
-    <None Include="README.md" Pack="true" PackagePath="" />
-    <None Include="THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="" />
-    <None Include="LICENSES/GPL-3.0.txt" Pack="true" PackagePath="LICENSES/" />
-    <None Include="LICENSES/LGPL-2.0-or-later.txt" Pack="true" PackagePath="LICENSES/" />
-    <None Include="LICENSES/LGPL-3.0-or-later.txt" Pack="true" PackagePath="LICENSES/" />
-    <None Include="images/Preview1.png" Pack="true" PackagePath="images/" />
-  </ItemGroup>
-
-  <!-- OpenAL.Soft stores release binaries below an extra Release folder, so include
-       them explicitly at conventional runtime paths in the single public package. -->
-  <ItemGroup>
-    <None Include="$(PkgOpenAL_Soft)\runtimes\win-x64\native\Release\OpenAL32.dll"
-          Pack="true" PackagePath="runtimes/win-x64/native/"
-          Link="runtimes/win-x64/native/OpenAL32.dll"
-          TargetPath="runtimes/win-x64/native/OpenAL32.dll"
-          CopyToOutputDirectory="PreserveNewest"
-          Condition="Exists('$(PkgOpenAL_Soft)\runtimes\win-x64\native\Release\OpenAL32.dll')" />
-    <None Include="$(PkgOpenAL_Soft)\runtimes\win-x86\native\Release\OpenAL32.dll"
-          Pack="true" PackagePath="runtimes/win-x86/native/"
-          Link="runtimes/win-x86/native/OpenAL32.dll"
-          TargetPath="runtimes/win-x86/native/OpenAL32.dll"
-          CopyToOutputDirectory="PreserveNewest"
-          Condition="Exists('$(PkgOpenAL_Soft)\runtimes\win-x86\native\Release\OpenAL32.dll')" />
-    <None Include="$(PkgOpenAL_Soft)\runtimes\win-arm64\native\Release\OpenAL32.dll"
-          Pack="true" PackagePath="runtimes/win-arm64/native/"
-          Link="runtimes/win-arm64/native/OpenAL32.dll"
-          TargetPath="runtimes/win-arm64/native/OpenAL32.dll"
-          CopyToOutputDirectory="PreserveNewest"
-          Condition="Exists('$(PkgOpenAL_Soft)\runtimes\win-arm64\native\Release\OpenAL32.dll')" />
-  </ItemGroup>
-
-  <!-- 
-    Native FFmpeg libraries - OPTIONAL.
-    These binaries are included in the NuGet package but can be disabled by:
-    1. Not including the runtimes folder when building the package
-    2. Using FFmpegInitializer.Initialize(customPath: "path/to/ffmpeg", useBundledBinaries: false)
-    
-    To use your own FFmpeg binaries instead of bundled ones:
-    - Set useBundledBinaries=false in Initialize() call
-    - Or provide a customPath parameter (which takes precedence over bundled binaries)
-    
-    The runtimes folder structure follows .NET conventions for native libraries.
-  -->
-  
-  <!-- Windows x64 native libraries - OPTIONAL (only included if folder exists) -->
-  <ItemGroup Condition="Exists('runtimes/win-x64/native/')">
-    <None Include="runtimes/win-x64/native/*.dll" Pack="true" PackagePath="runtimes/win-x64/native/" />
-  </ItemGroup>
-  
-  <!-- macOS ARM64 native libraries - OPTIONAL (only included if folder exists) -->
-  <ItemGroup Condition="Exists('runtimes/osx-arm64/native/')">
-    <None Include="runtimes/osx-arm64/native/*.dylib" Pack="true" PackagePath="runtimes/osx-arm64/native/" />
-  </ItemGroup>
-  
-  <!-- macOS x64 native libraries (if available) -->
-  <ItemGroup Condition="Exists('runtimes/osx-x64/native/')">
-    <None Include="runtimes/osx-x64/native/*.dylib" Pack="true" PackagePath="runtimes/osx-x64/native/" />
-  </ItemGroup>
-  
-  <!-- Linux x64 native libraries (if available) -->
-  <ItemGroup Condition="Exists('runtimes/linux-x64/native/')">
-    <None Include="runtimes/linux-x64/native/*.so*" Pack="true" PackagePath="runtimes/linux-x64/native/" />
-  </ItemGroup>
-
-  <!-- 
-    Build targets file to ensure native libraries are copied to output directory
-    when consuming projects build. This is packaged as a .targets file.
-  -->
-  <ItemGroup>
-    <None Include="build/FFmpegVideoPlayer.Avalonia.targets" Pack="true" PackagePath="build/" />
-    <None Include="buildTransitive/FFmpegVideoPlayer.Avalonia.targets" Pack="true" PackagePath="buildTransitive/" />
-  </ItemGroup>
-
-  <!-- Copy native libraries to output for local development/testing -->
-  <Target Name="CopyBundledFFmpeg" AfterTargets="Build">
+  <!-- Ship Core and Audio in the single public package, not as package dependencies. -->
+  <Target Name="PackProjectReferenceOutputs" DependsOnTargets="BuildOnlySettings;ResolveReferences">
     <ItemGroup>
-      <NativeRuntimeFiles Include="runtimes/**/*.*" Exclude="runtimes/README.md" />
-    </ItemGroup>
-    <Copy SourceFiles="@(NativeRuntimeFiles)"
-          DestinationFiles="@(NativeRuntimeFiles->'$(OutDir)runtimes\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true"
-          Condition="'@(NativeRuntimeFiles)' != ''" />
-  </Target>
-
-  <!-- Core and Audio stay implementation projects. Their assemblies are embedded in
-       FFmpegVideoPlayer.Avalonia instead of becoming separate NuGet dependencies. -->
-  <Target Name="PackProjectReferenceOutputs"
-          DependsOnTargets="BuildOnlySettings;ResolveReferences">
-    <ItemGroup>
-      <_EmbeddedProjectAssembly
-          Include="@(ReferenceCopyLocalPaths)"
+      <_EmbeddedProjectAssembly Include="@(ReferenceCopyLocalPaths)"
           Condition="'%(ReferenceCopyLocalPaths.ReferenceSourceTarget)' == 'ProjectReference' and '%(ReferenceCopyLocalPaths.Extension)' == '.dll'" />
       <BuildOutputInPackage Include="@(_EmbeddedProjectAssembly)">
         <FinalOutputPath>%(_EmbeddedProjectAssembly.FullPath)</FinalOutputPath>

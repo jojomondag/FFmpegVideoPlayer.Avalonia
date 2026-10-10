@@ -2,11 +2,6 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <RootNamespace>FFmpegVideoPlayerExample</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,10 +14,9 @@
     <PackageReference Include="Serilog.Sinks.Console" Version="5.0.0" />
   </ItemGroup>
 
-  <!-- Core is referenced directly for FFmpegInitializer during source builds.
-       The public NuGet package includes Core and the default audio backend. -->
   <ItemGroup>
     <ProjectReference Include="../../Avalonia.FFmpegVideoPlayer.csproj" />
+    <!-- The package embeds Core; source builds need its API explicitly. -->
     <ProjectReference Include="../../FFmpegVideoPlayer.Core/FFmpegVideoPlayer.Core.csproj" />
   </ItemGroup>
 

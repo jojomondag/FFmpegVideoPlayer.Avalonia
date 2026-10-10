@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using FFmpegVideoPlayer.Core;
+
 namespace FFmpegVideoPlayer.Audio.OpenTK;
 
 /// <summary>
@@ -41,9 +43,9 @@ public static class AudioPlayerFactory
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[AudioPlayerFactory] Failed to create OpenTK audio player: {ex.Message}");
-            System.Diagnostics.Debug.WriteLine($"[AudioPlayerFactory] On Windows, ensure OpenAL Soft is installed or openal32.dll is available.");
-            System.Diagnostics.Debug.WriteLine($"[AudioPlayerFactory] Download from: https://www.openal-soft.org/downloads/");
+            Debug.WriteLine($"[AudioPlayerFactory] Failed to create OpenTK audio player: {ex.Message}");
+            Debug.WriteLine("[AudioPlayerFactory] On Windows, ensure OpenAL Soft is installed or openal32.dll is available.");
+            Debug.WriteLine("[AudioPlayerFactory] Download from: https://www.openal-soft.org/downloads/");
             return null;
         }
     }

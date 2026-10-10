@@ -31,7 +31,6 @@ public sealed partial class FFmpegMediaPlayer
         {
             await _openGate.WaitAsync(operationCancellation.Token).ConfigureAwait(false);
             gateEntered = true;
-            Interlocked.Exchange(ref _openGateHeld, 1);
             ObjectDisposedException.ThrowIf(_isDisposed, this);
             operationCancellation.Token.ThrowIfCancellationRequested();
             var previousSession = CloseWhileOpenGateHeld();
@@ -72,14 +71,8 @@ public sealed partial class FFmpegMediaPlayer
             }
 
             session = null; // Ownership transferred by OpenResolved.
-            var mediaInfo = _mediaInfo ?? new MediaInfo(
-                source.DisplayName,
-                TimeSpan.FromMilliseconds(Length),
-                HasVideo,
-                HasAudio,
-                VideoWidth,
-                VideoHeight);
-            return MediaOpenResult.Success(mediaInfo);
+            // A successful OpenResolved assigns metadata while the open gate excludes Close.
+            return MediaOpenResult.Success(_mediaInfo!);
         }
         catch (OperationCanceledException)
         {
@@ -121,10 +114,7 @@ public sealed partial class FFmpegMediaPlayer
         finally
         {
             if (gateEntered)
-            {
-                Interlocked.Exchange(ref _openGateHeld, 0);
                 _openGate.Release();
-            }
             lock (_openOperationLock)
             {
                 if (ReferenceEquals(_activeOpenCancellation, operationCancellation))

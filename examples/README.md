@@ -1,6 +1,6 @@
 # FFmpegVideoPlayer.Avalonia Examples
 
-The example demonstrates `VideoPlayerControl` with Avalonia 12.1+ and .NET 8+.
+The example demonstrates `VideoPlayerControl` with Avalonia 12.1+ and .NET 10.
 Run it from the repository root:
 
 ```bash
@@ -26,7 +26,7 @@ Replace both `ProjectReference` entries in the example `.csproj` with this singl
 reference. Core, the control and the default audio backend are included:
 
 ```xml
-<PackageReference Include="FFmpegVideoPlayer.Avalonia" Version="3.1.0-preview.2" />
+<PackageReference Include="FFmpegVideoPlayer.Avalonia" Version="3.1.0-preview.3" />
 ```
 
 Until the preview is published, build it locally with

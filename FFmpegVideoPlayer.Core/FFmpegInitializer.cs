@@ -200,20 +200,7 @@ public static class FFmpegInitializer
             // already have a working FFmpeg path.
             if (string.IsNullOrEmpty(_ffmpegPath) && string.IsNullOrEmpty(customPath))
             {
-                var discovered = FindFFmpegPath();
-                if (!string.IsNullOrEmpty(discovered))
-                {
-                    FFmpegPathResolver.ConfigureNativeSearchPath(discovered);
-                    if (FFmpegPathResolver.TryValidateBindings())
-                    {
-                        Log($"Using system FFmpeg: {discovered}");
-                        _ffmpegPath = discovered;
-                    }
-                    else
-                    {
-                        Log($"System FFmpeg at '{discovered}' failed to load.");
-                    }
-                }
+                ConfigureDiscoveredFFmpeg("system", logFailure: true);
             }
 
             // If still not found on macOS and autoInstall is enabled, try to install via Homebrew
@@ -223,18 +210,7 @@ public static class FFmpegInitializer
                 StatusChanged?.Invoke("FFmpeg not found. Installing via Homebrew (this may take a few minutes)...");
 
                 if (TryInstallFFmpegOnMacOS())
-                {
-                    var discovered = FindFFmpegPath();
-                    if (!string.IsNullOrEmpty(discovered))
-                    {
-                        FFmpegPathResolver.ConfigureNativeSearchPath(discovered);
-                        if (FFmpegPathResolver.TryValidateBindings())
-                        {
-                            Log($"Using Homebrew-installed FFmpeg: {discovered}");
-                            _ffmpegPath = discovered;
-                        }
-                    }
-                }
+                    ConfigureDiscoveredFFmpeg("Homebrew-installed");
             }
 
             // Same treatment on Linux: try apt/dnf/pacman (needs sudo — succeeds on
@@ -246,18 +222,7 @@ public static class FFmpegInitializer
                 StatusChanged?.Invoke("FFmpeg not found. Attempting install via system package manager…");
 
                 if (TryInstallFFmpegOnLinux())
-                {
-                    var discovered = FindFFmpegPath();
-                    if (!string.IsNullOrEmpty(discovered))
-                    {
-                        FFmpegPathResolver.ConfigureNativeSearchPath(discovered);
-                        if (FFmpegPathResolver.TryValidateBindings())
-                        {
-                            Log($"Using system-installed FFmpeg: {discovered}");
-                            _ffmpegPath = discovered;
-                        }
-                    }
-                }
+                    ConfigureDiscoveredFFmpeg("system-installed");
             }
 
             // Last-ditch: try whatever the default loader can find (OS-installed library in
@@ -412,15 +377,7 @@ public static class FFmpegInitializer
 
         try
         {
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = brewPath,
-                Arguments = "install ffmpeg",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
+            var startInfo = CreateInstallerStartInfo(brewPath, "install ffmpeg");
 
             // Set up environment for Homebrew
             if (IsArm)
@@ -439,7 +396,6 @@ public static class FFmpegInitializer
                 return false;
             }
 
-            // Read output asynchronously
             var output = process.StandardOutput.ReadToEnd();
             var error = process.StandardError.ReadToEnd();
             
@@ -484,16 +440,9 @@ public static class FFmpegInitializer
         {
             Log("Attempting to install Homebrew...");
             
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = "/bin/bash",
-                Arguments = "-c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                RedirectStandardInput = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
+            var startInfo = CreateInstallerStartInfo("/bin/bash",
+                "-c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"");
+            startInfo.RedirectStandardInput = true;
 
             // Set NONINTERACTIVE to avoid prompts
             startInfo.Environment["NONINTERACTIVE"] = "1";
@@ -508,7 +457,7 @@ public static class FFmpegInitializer
             // Close stdin to signal no interactive input
             process.StandardInput.Close();
 
-            var output = process.StandardOutput.ReadToEnd();
+            process.StandardOutput.ReadToEnd();
             var error = process.StandardError.ReadToEnd();
             
             process.WaitForExit();
@@ -550,7 +499,7 @@ public static class FFmpegInitializer
             return false;
         }
 
-        string? pkgManagerPath = null;
+        string pkgManagerPath;
         string installArgs;
         string displayCommand;
 
@@ -585,15 +534,9 @@ public static class FFmpegInitializer
 
         try
         {
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = isRoot ? pkgManagerPath : "sudo",
-                Arguments = isRoot ? installArgs : $"-n {pkgManagerPath} {installArgs}",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
+            var startInfo = CreateInstallerStartInfo(
+                isRoot ? pkgManagerPath : "sudo",
+                isRoot ? installArgs : $"-n {pkgManagerPath} {installArgs}");
             // DEBIAN_FRONTEND=noninteractive prevents apt from prompting about config files.
             startInfo.Environment["DEBIAN_FRONTEND"] = "noninteractive";
 
@@ -604,7 +547,7 @@ public static class FFmpegInitializer
                 return false;
             }
 
-            var output = process.StandardOutput.ReadToEnd();
+            process.StandardOutput.ReadToEnd();
             var error = process.StandardError.ReadToEnd();
             process.WaitForExit();
 
@@ -639,6 +582,16 @@ public static class FFmpegInitializer
     }
 
     #endregion
+
+    private static ProcessStartInfo CreateInstallerStartInfo(string fileName, string arguments) => new()
+    {
+        FileName = fileName,
+        Arguments = arguments,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        UseShellExecute = false,
+        CreateNoWindow = true
+    };
 
     #region Installation Instructions
 
@@ -729,7 +682,7 @@ After installation, restart your terminal/IDE.";
                 try
                 {
                     ffmpeg.RootPath = "";
-                    var version = ffmpeg.av_version_info();
+                    ffmpeg.av_version_info();
                     status.IsInstalled = true;
                     status.LibraryPath = "System default";
                 }
@@ -754,6 +707,23 @@ After installation, restart your terminal/IDE.";
 
     #region Path Discovery
 
+    private static void ConfigureDiscoveredFFmpeg(string source, bool logFailure = false)
+    {
+        var path = FindFFmpegPath();
+        if (string.IsNullOrEmpty(path)) return;
+
+        FFmpegPathResolver.ConfigureNativeSearchPath(path);
+        if (FFmpegPathResolver.TryValidateBindings())
+        {
+            Log($"Using {source} FFmpeg: {path}");
+            _ffmpegPath = path;
+        }
+        else if (logFailure)
+        {
+            Log($"System FFmpeg at '{path}' failed to load.");
+        }
+    }
+
     private static string? FindFFmpegPath()
     {
         // Retain bundled discovery here for installation-status checks as well as initialization.
@@ -764,7 +734,7 @@ After installation, restart your terminal/IDE.";
             return bundledPath;
         }
 
-        // 3. Application directory
+        // Application directory
         var baseDir = AppContext.BaseDirectory;
         var appDirPaths = new[]
         {
@@ -773,16 +743,11 @@ After installation, restart your terminal/IDE.";
             baseDir
         };
 
-        foreach (var path in appDirPaths)
-        {
-            if (FFmpegPathResolver.HasFFmpegLibrary(path))
-            {
-                Log($"Found FFmpeg in application directory: {path}");
-                return path;
-            }
-        }
+        var appPath = FindFirstLibrary(appDirPaths, "Found FFmpeg in application directory");
+        if (appPath is not null)
+            return appPath;
 
-        // 4. Platform-specific detection
+        // Platform-specific detection
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             return FindWindowsFFmpeg();
@@ -811,30 +776,10 @@ After installation, restart your terminal/IDE.";
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ffmpeg", "bin"),
         };
 
-        foreach (var path in paths)
-        {
-            if (FFmpegPathResolver.HasFFmpegLibrary(path))
-            {
-                Log($"Found FFmpeg at: {path}");
-                return path;
-            }
-        }
-
-        // Check PATH environment variable
-        var envPath = Environment.GetEnvironmentVariable("PATH");
-        if (!string.IsNullOrEmpty(envPath))
-        {
-            foreach (var path in envPath.Split(';'))
-            {
-                if (FFmpegPathResolver.HasFFmpegLibrary(path))
-                {
-                    Log($"Found FFmpeg in PATH: {path}");
-                    return path;
-                }
-            }
-        }
-
-        return null;
+        return FindFirstLibrary(paths, "Found FFmpeg at")
+            ?? FindFirstLibrary(
+                (Environment.GetEnvironmentVariable("PATH") ?? "").Split(';'),
+                "Found FFmpeg in PATH");
     }
 
     private static string? FindMacOSFFmpeg()
@@ -897,29 +842,22 @@ After installation, restart your terminal/IDE.";
             "/lib",
         };
 
-        foreach (var path in systemPaths)
+        return FindFirstLibrary(systemPaths, "Found FFmpeg at")
+            ?? FindFirstLibrary(
+                (Environment.GetEnvironmentVariable("LD_LIBRARY_PATH") ?? "").Split(':'),
+                "Found FFmpeg via LD_LIBRARY_PATH");
+    }
+
+    private static string? FindFirstLibrary(IEnumerable<string> paths, string logPrefix)
+    {
+        foreach (var path in paths)
         {
             if (FFmpegPathResolver.HasFFmpegLibrary(path))
             {
-                Log($"Found FFmpeg at: {path}");
+                Log($"{logPrefix}: {path}");
                 return path;
             }
         }
-
-        // Check LD_LIBRARY_PATH
-        var ldPath = Environment.GetEnvironmentVariable("LD_LIBRARY_PATH");
-        if (!string.IsNullOrEmpty(ldPath))
-        {
-            foreach (var path in ldPath.Split(':'))
-            {
-                if (FFmpegPathResolver.HasFFmpegLibrary(path))
-                {
-                    Log($"Found FFmpeg via LD_LIBRARY_PATH: {path}");
-                    return path;
-                }
-            }
-        }
-
         return null;
     }
 

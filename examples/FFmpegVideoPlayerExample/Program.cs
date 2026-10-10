@@ -18,15 +18,7 @@ class Program
 
             FFmpegInitializer.StatusChanged += msg => Log.Information("{Status}", msg);
 
-            // Initialize FFmpeg
-            // Option 1: Use bundled binaries (default - if included in package)
             FFmpegInitializer.Initialize();
-            
-            // Option 2: Use custom FFmpeg path (recommended to avoid conflicts)
-            // FFmpegInitializer.Initialize(customPath: @"C:\ffmpeg\bin", useBundledBinaries: false);
-            
-            // Option 3: Disable bundled binaries, use system FFmpeg
-            // FFmpegInitializer.Initialize(useBundledBinaries: false);
 
             BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         }

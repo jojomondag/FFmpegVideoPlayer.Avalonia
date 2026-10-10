@@ -12,7 +12,7 @@ try {
         throw 'Run the cleanup script from an FFmpegVideoPlayer.Avalonia checkout.'
     }
     $projectDirectories = @('', 'FFmpegVideoPlayer.Core', 'FFmpegVideoPlayer.Audio.OpenTK',
-        'FFmpegVideoPlayer.Rendering.OpenGL', 'examples/FFmpegVideoPlayerExample', 'tests/FFmpegVideoPlayer.Tests')
+        'examples/FFmpegVideoPlayerExample', 'tests/FFmpegVideoPlayer.Tests')
     $targets = @('artifacts/bin', 'artifacts/obj', 'artifacts/TestResults')
     foreach ($projectDirectory in $projectDirectories) {
         foreach ($generatedDirectory in @('bin', 'obj', '.tmp-build', 'TestResults')) {

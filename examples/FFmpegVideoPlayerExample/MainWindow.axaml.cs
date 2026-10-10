@@ -31,25 +31,19 @@ public partial class MainWindow : Window
             Log.Information("Playback {EventName}.", eventName);
     }
 
-    private void OnShowControlsChanged(object? sender, RoutedEventArgs e)
-    {
+    private void OnShowControlsChanged(object? sender, RoutedEventArgs e) =>
         VideoPlayer.ShowControls = ShowControlsCheckBox.IsChecked ?? true;
-    }
 
-    private void OnTransparentBgChanged(object? sender, RoutedEventArgs e)
-    {
+    private void OnTransparentBgChanged(object? sender, RoutedEventArgs e) =>
         VideoPlayer.VideoBackground = TransparentBgCheckBox.IsChecked == true 
             ? Brushes.Transparent 
             : Brushes.Black;
-    }
 
     private void OnStretchModeChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (StretchModeComboBox.SelectedItem is ComboBoxItem { Content: string stretchMode } &&
             Enum.TryParse<Stretch>(stretchMode, out var stretch))
-        {
             VideoPlayer.VideoStretch = stretch;
-        }
     }
 
     private void OnShortcutsClick(object? sender, RoutedEventArgs e) => new ShortcutsWindow().Show(this);

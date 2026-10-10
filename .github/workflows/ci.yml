@@ -9,11 +9,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        dotnet-version: ["8.0.x", "10.0.x"]
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,7 +16,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: ${{ matrix.dotnet-version }}
+          dotnet-version: "10.0.x"
 
       - name: Restore solution
         run: dotnet restore FFmpegVideoPlayer.Avalonia.sln
@@ -36,11 +31,9 @@ jobs:
         run: dotnet build examples/FFmpegVideoPlayerExample/FFmpegVideoPlayerExample.csproj -c Release
 
       - name: Pack standalone NuGet package
-        if: matrix.dotnet-version == '10.0.x'
         run: dotnet pack Avalonia.FFmpegVideoPlayer.csproj -c Release -o artifacts/packages
 
       - name: Validate package in a clean consumer
-        if: matrix.dotnet-version == '10.0.x'
         shell: bash
         env:
           NUGET_PACKAGES: ${{ runner.temp }}/ffmpeg-player-smoke-nuget
@@ -50,8 +43,13 @@ jobs:
           package_dir="$GITHUB_WORKSPACE/artifacts/packages"
           consumer_dir="$RUNNER_TEMP/ffmpeg-player-package-smoke"
           package_version="$(dotnet msbuild Avalonia.FFmpegVideoPlayer.csproj -nologo -getProperty:Version -p:Configuration=Release)"
+          package_files="$(unzip -Z1 "$package_dir/FFmpegVideoPlayer.Avalonia.$package_version.nupkg")"
+          for assembly in Avalonia.FFmpegVideoPlayer FFmpegVideoPlayer.Core FFmpegVideoPlayer.Audio.OpenTK; do
+            grep -Fxq "lib/net10.0/$assembly.dll" <<< "$package_files"
+          done
+          test "$(grep -Ec '^lib/[^/]+/.*\.dll$' <<< "$package_files")" -eq 3
 
-          dotnet new console --name PackageSmoke --framework net8.0 --output "$consumer_dir" --no-restore
+          dotnet new console --name PackageSmoke --framework net10.0 --output "$consumer_dir" --no-restore
           dotnet new nugetconfig --output "$consumer_dir"
           nuget_config="$(find "$consumer_dir" -maxdepth 1 -iname 'nuget.config' -print -quit)"
           test -n "$nuget_config"
@@ -66,9 +64,16 @@ jobs:
 
           dotnet restore "$consumer_dir/PackageSmoke.csproj" --configfile "$nuget_config"
           dotnet run --project "$consumer_dir/PackageSmoke.csproj" --configuration Release --no-restore
+          dotnet publish "$consumer_dir/PackageSmoke.csproj" --configuration Release --no-restore --output "$consumer_dir/publish"
+          for output in "$consumer_dir/bin/Release/net10.0" "$consumer_dir/publish"; do
+            for native in avcodec-62 avformat-62 avutil-60 swresample-6 swscale-9 OpenAL32; do
+              test -f "$output/runtimes/win-x64/native/$native.dll"
+            done
+            test -f "$output/runtimes/win-x86/native/OpenAL32.dll"
+            test -f "$output/runtimes/win-arm64/native/OpenAL32.dll"
+          done
 
       - name: Upload standalone package
-        if: matrix.dotnet-version == '10.0.x'
         uses: actions/upload-artifact@v4
         with:
           name: FFmpegVideoPlayer.Avalonia

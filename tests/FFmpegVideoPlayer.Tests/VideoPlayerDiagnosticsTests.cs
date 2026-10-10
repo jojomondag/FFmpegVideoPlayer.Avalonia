@@ -117,7 +117,38 @@ public sealed class VideoPlayerDiagnosticsTests
         Assert.Null(diagnostic.Exception);
     });
 
-    // These helpers exercise the production event boundary without opening media,
+    [Theory]
+    [InlineData("OnPlaying", VideoPlayerDiagnosticKind.Playing, false)]
+    [InlineData("OnPlaying", VideoPlayerDiagnosticKind.Playing, true)]
+    [InlineData("OnPaused", VideoPlayerDiagnosticKind.Paused, false)]
+    [InlineData("OnPaused", VideoPlayerDiagnosticKind.Paused, true)]
+    [InlineData("OnStopped", VideoPlayerDiagnosticKind.Stopped, false)]
+    [InlineData("OnStopped", VideoPlayerDiagnosticKind.Stopped, true)]
+    public Task Playback_notifications_observe_changes_made_by_diagnostic_subscribers(
+        string handler, VideoPlayerDiagnosticKind expectedKind, bool supersede) => RunUiTest(() =>
+    {
+        var control = new VideoPlayerControl();
+        using var player = new FFmpegMediaPlayer();
+        typeof(VideoPlayerControl).GetField("_mediaPlayer", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(control, player);
+        var notifications = 0;
+        VideoPlayerDiagnosticKind? receivedKind = null;
+        control.Diagnostic += (_, args) =>
+        {
+            receivedKind = args.Kind;
+            control.PlaybackStarted += CountNotification;
+            control.PlaybackPaused += CountNotification;
+            control.PlaybackStopped += CountNotification;
+            if (supersede) control.Stop();
+        };
+
+        PrivateMethod(handler).Invoke(control, [player, EventArgs.Empty]);
+
+        Assert.Equal(expectedKind, receivedKind);
+        Assert.Equal(supersede ? 0 : 1, notifications);
+        void CountNotification(object? sender, EventArgs args) => notifications++;
+    });
+
     [Fact]
     public Task A_failure_from_an_old_native_player_does_not_end_the_current_session() => RunUiTest(() =>
     {

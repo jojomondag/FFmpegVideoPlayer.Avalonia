@@ -27,7 +27,7 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
     private readonly PlayerLogger _logger;
     private readonly ConcurrentQueue<AudioCommand> _commands = new();
     private readonly AutoResetEvent _wake = new(false);
-    private readonly CancellationTokenSource _shutdown = new();
+    private volatile bool _shutdownRequested;
     private readonly TaskCompletionSource<Exception?> _startup =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly object _pcmLock = new();
@@ -54,7 +54,6 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
     private int _disposeRequested;
     private int _workerExited;
     private int _isDrained = 1;
-    private int _volumeBits = BitConverter.SingleToInt32Bits(1.0f);
     private long _cachedPlaybackTimeBits;
 
     public OpenTKAudioPlayer(int sampleRate, int channels)
@@ -72,13 +71,7 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
             Math.Max(SamplesPerPacket, (long)sampleRate * _channels * MaximumPendingSeconds)));
         _logger = new PlayerLogger();
 
-        _logger.Log("OpenTKAudioPlayer", "Initialize", new
-        {
-            SampleRate = sampleRate,
-            InputChannels = channels,
-            OutputChannels = _channels,
-            MaximumPendingSamples = _maximumPendingSamples
-        });
+        _logger.Log("OpenTKAudioPlayer", "Initialize");
 
         _audioThread = new Thread(AudioLoop)
         {
@@ -114,28 +107,22 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
             return;
 
         var clamped = Math.Clamp(volume, 0f, 1f);
-        Interlocked.Exchange(ref _volumeBits, BitConverter.SingleToInt32Bits(clamped));
         EnqueueCommand(new AudioCommand(AudioCommandKind.SetVolume, clamped));
     }
 
     /// <inheritdoc />
-    public void Resume()
-    {
-        if (Volatile.Read(ref _disposeRequested) != 0)
-            return;
-
-        Volatile.Write(ref _desiredPaused, 0);
-        EnqueueCommand(new AudioCommand(AudioCommandKind.Resume));
-    }
+    public void Resume() => SetPaused(false);
 
     /// <inheritdoc />
-    public void Pause()
+    public void Pause() => SetPaused(true);
+
+    private void SetPaused(bool paused)
     {
         if (Volatile.Read(ref _disposeRequested) != 0)
             return;
 
-        Volatile.Write(ref _desiredPaused, 1);
-        EnqueueCommand(new AudioCommand(AudioCommandKind.Pause));
+        Volatile.Write(ref _desiredPaused, paused ? 1 : 0);
+        EnqueueCommand(new AudioCommand(paused ? AudioCommandKind.Pause : AudioCommandKind.Resume));
     }
 
     /// <inheritdoc />
@@ -178,8 +165,7 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
         var generation = Volatile.Read(ref _generation);
         EnsureCanQueue(cancellationToken);
 
-        var offset = 0;
-        while (offset < sampleCount)
+        for (var offset = 0; offset < sampleCount;)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var count = Math.Min(SamplesPerPacket, sampleCount - offset);
@@ -212,8 +198,7 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
             ? DownmixToStereo(samples, _inputChannels)
             : samples;
 
-        var offset = 0;
-        while (offset < output.Length)
+        for (var offset = 0; offset < output.Length;)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var count = Math.Min(SamplesPerPacket, output.Length - offset);
@@ -260,10 +245,7 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
     {
         lock (_pcmLock)
         {
-            while (Volatile.Read(ref _disposeRequested) == 0 &&
-                   Volatile.Read(ref _workerExited) == 0 &&
-                   packet.Generation == Volatile.Read(ref _generation) &&
-                   Volatile.Read(ref _inputCompleted) == 0 &&
+            while (CanQueuePcm(packet.Generation) &&
                    _pendingSampleCount + packet.Samples.Length > _maximumPendingSamples)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -271,13 +253,8 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            if (Volatile.Read(ref _disposeRequested) != 0 ||
-                Volatile.Read(ref _workerExited) != 0 ||
-                packet.Generation != Volatile.Read(ref _generation) ||
-                Volatile.Read(ref _inputCompleted) != 0)
-            {
+            if (!CanQueuePcm(packet.Generation))
                 return false;
-            }
 
             _pendingPcm.Enqueue(packet);
             _pendingSampleCount += packet.Samples.Length;
@@ -287,6 +264,12 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
         _wake.Set();
         return true;
     }
+
+    private bool CanQueuePcm(int generation) =>
+        Volatile.Read(ref _disposeRequested) == 0 &&
+        Volatile.Read(ref _workerExited) == 0 &&
+        generation == Volatile.Read(ref _generation) &&
+        Volatile.Read(ref _inputCompleted) == 0;
 
     private bool TryDequeuePcm(out PcmPacket packet)
     {
@@ -325,14 +308,12 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
 
     private void AudioLoop()
     {
-        var startupSignalled = false;
         try
         {
             InitializeOpenAl();
             _startup.TrySetResult(null);
-            startupSignalled = true;
 
-            while (!_shutdown.IsCancellationRequested)
+            while (!_shutdownRequested)
             {
                 if (!ProcessCommands())
                     break;
@@ -348,20 +329,15 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
         }
         catch (Exception ex)
         {
-            if (!startupSignalled)
-            {
-                _startup.TrySetResult(ex);
-                startupSignalled = true;
-            }
-            else
+            if (!_startup.TrySetResult(ex))
             {
                 Debug.WriteLine($"[OpenTKAudioPlayer] Audio thread stopped: {ex.Message}");
-                _logger.Log("OpenTKAudioPlayer", "AudioThreadFailed", new { Exception = ex.Message });
+                _logger.Log("OpenTKAudioPlayer", "AudioThreadFailed");
             }
         }
         finally
         {
-            if (!startupSignalled)
+            if (!_startup.Task.IsCompleted)
                 _startup.TrySetResult(new InvalidOperationException("The OpenAL audio thread exited during initialization."));
 
             CleanupOpenAl();
@@ -401,10 +377,9 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
             _availableBuffers.Enqueue(buffer);
         }
 
-        var volume = BitConverter.Int32BitsToSingle(Volatile.Read(ref _volumeBits));
-        AL.Source(_source, ALSourcef.Gain, volume);
+        AL.Source(_source, ALSourcef.Gain, 1f);
         ThrowOnAlError("set source gain");
-        _logger.Log("OpenTKAudioPlayer", "OpenALReady", new { BufferCount });
+        _logger.Log("OpenTKAudioPlayer", "OpenALReady");
     }
 
     private bool ProcessCommands()
@@ -446,7 +421,7 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
             }
         }
 
-        return !_shutdown.IsCancellationRequested;
+        return !_shutdownRequested;
     }
 
     private void RecycleProcessedBuffers()
@@ -669,24 +644,16 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
             {
                 float left = 0;
                 float right = 0;
-                var leftCount = 0;
-                var rightCount = 0;
                 for (var channel = 0; channel < inputChannels; channel++)
                 {
                     if ((channel & 1) == 0)
-                    {
                         left += input[inputOffset + channel];
-                        leftCount++;
-                    }
                     else
-                    {
                         right += input[inputOffset + channel];
-                        rightCount++;
-                    }
                 }
 
-                output[outputOffset] = Math.Clamp(left / Math.Max(leftCount, 1), -1f, 1f);
-                output[outputOffset + 1] = Math.Clamp(right / Math.Max(rightCount, 1), -1f, 1f);
+                output[outputOffset] = Math.Clamp(left / ((inputChannels + 1) / 2), -1f, 1f);
+                output[outputOffset + 1] = Math.Clamp(right / (inputChannels / 2), -1f, 1f);
             }
         }
 
@@ -710,7 +677,7 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
             return true;
 
         Debug.WriteLine($"[OpenTKAudioPlayer] OpenAL failed to {operation}: {error}");
-        _logger.Log("OpenTKAudioPlayer", "OpenALError", new { Operation = operation, Error = error.ToString() });
+        _logger.Log("OpenTKAudioPlayer", "OpenALError");
         return false;
     }
 
@@ -723,7 +690,7 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
         Volatile.Write(ref _inputCompleted, 1);
         ClearPendingPcm();
         _commands.Enqueue(new AudioCommand(AudioCommandKind.Shutdown));
-        _shutdown.Cancel();
+        _shutdownRequested = true;
         _wake.Set();
     }
 
@@ -732,7 +699,7 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
         if (Volatile.Read(ref _disposeRequested) != 0)
             return;
 
-        _logger.Log("OpenTKAudioPlayer", "Dispose", null);
+        _logger.Log("OpenTKAudioPlayer", "Dispose");
         RequestShutdown();
 
         if (Thread.CurrentThread == _audioThread)
@@ -743,7 +710,7 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
             // Native resources remain owned by the still-running audio thread. It will
             // destroy them in its finally block if/when the blocking driver call returns.
             Debug.WriteLine("[OpenTKAudioPlayer] Audio thread did not stop before the dispose timeout; native cleanup was deferred to that thread.");
-            _logger.Log("OpenTKAudioPlayer", "DisposeDeferred", new { DisposeJoinTimeoutMilliseconds });
+            _logger.Log("OpenTKAudioPlayer", "DisposeDeferred");
         }
     }
 

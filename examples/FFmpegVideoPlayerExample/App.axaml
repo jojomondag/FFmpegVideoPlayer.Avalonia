@@ -4,7 +4,5 @@
              RequestedThemeVariant="Default">
     <Application.Styles>
         <FluentTheme />
-        <!-- Icons are provided by default using standard Avalonia shapes -->
-        <!-- To use custom icons, set VideoPlayerControl.IconProvider property -->
     </Application.Styles>
 </Application>

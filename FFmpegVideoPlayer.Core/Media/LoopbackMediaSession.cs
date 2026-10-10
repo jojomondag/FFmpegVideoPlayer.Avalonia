@@ -62,7 +62,7 @@ public sealed class LoopbackMediaSession : IAsyncDisposable, IDisposable
             .ToDictionary(resource => resource.FileName, StringComparer.Ordinal);
         if (!_resources.ContainsKey(primaryFileName))
             throw new ArgumentException("The primary file must be present in resources.", nameof(resources));
-        _routePrefix = "/" + Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant() + "/";
+        _routePrefix = "/" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16)) + "/";
         _listener = new TcpListener(IPAddress.Loopback, 0);
         _listener.Start();
 
@@ -128,9 +128,7 @@ public sealed class LoopbackMediaSession : IAsyncDisposable, IDisposable
                     _ = requestTask.ContinueWith(
                         completedTask =>
                         {
-                            _requestTasks.TryRemove(requestId, out var removedTask);
-                            _ = completedTask;
-                            _ = removedTask;
+                            _requestTasks.TryRemove(requestId, out _);
                         },
                         CancellationToken.None,
                         TaskContinuationOptions.ExecuteSynchronously,
@@ -236,7 +234,8 @@ public sealed class LoopbackMediaSession : IAsyncDisposable, IDisposable
                 var range = ParseRange(headers.GetValueOrDefault("Range"), resource.Length);
                 if (range is null)
                 {
-                    await WriteRangeNotSatisfiableAsync(network, resource.Length, cancellationToken)
+                    await WriteStatusAsync(network, 416, "Range Not Satisfiable", cancellationToken,
+                            $"Content-Range: bytes */{resource.Length.ToString(CultureInfo.InvariantCulture)}\r\n")
                         .ConfigureAwait(false);
                     return;
                 }
@@ -457,27 +456,16 @@ public sealed class LoopbackMediaSession : IAsyncDisposable, IDisposable
         await destination.WriteAsync(Encoding.ASCII.GetBytes(header), cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task WriteRangeNotSatisfiableAsync(
-        Stream destination,
-        long length,
-        CancellationToken cancellationToken)
-    {
-        var header =
-            "HTTP/1.1 416 Range Not Satisfiable\r\n" +
-            $"Content-Range: bytes */{length.ToString(CultureInfo.InvariantCulture)}\r\n" +
-            "Content-Length: 0\r\n" +
-            "Connection: close\r\n\r\n";
-        await destination.WriteAsync(Encoding.ASCII.GetBytes(header), cancellationToken).ConfigureAwait(false);
-    }
-
     private static async Task WriteStatusAsync(
         Stream destination,
         int statusCode,
         string reason,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? additionalHeaders = null)
     {
         var header =
             $"HTTP/1.1 {statusCode.ToString(CultureInfo.InvariantCulture)} {reason}\r\n" +
+            additionalHeaders +
             "Content-Length: 0\r\n" +
             "Connection: close\r\n\r\n";
         await destination.WriteAsync(Encoding.ASCII.GetBytes(header), cancellationToken).ConfigureAwait(false);

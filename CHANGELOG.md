@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.1.0-preview.3] - 2026-10-10
 
 ### Added
 - `VideoPlayerControl.Diagnostic` provides opt-in structured playback and audio-output diagnostics, including failures that leave video playback available.
@@ -14,8 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MediaFileTypes` classifies common audio/video filename extensions.
 
 ### Changed
-- Prepared `3.1.0-preview.2` for local package validation. Publication is a separate step; existing published packages are unchanged.
-- Shared duplicate bitmap rendering and log-writing code, and removed unused private helpers and redundant example setup without changing the public player API.
+- Target .NET 10 exclusively across the package, implementation projects, tests, example and CI.
+- Remove the unused standalone legacy renderer project, share bitmap rendering and playback helpers, and avoid allocating unused playback log payloads.
+- Simplify package metadata and native asset handling; generate direct and transitive build targets from one file.
+- Stop packing the preview screenshot, which the README already loads from GitHub; preserve all native libraries and third-party licenses.
+- Shared frame decoding/copying, audio reset, initialization and UI notification code; removed unused state and duplicate control references while preserving the public player API and playback logic.
+- Private playback logging is Debug-only, and fileless logging no longer retains unused diagnostic payloads.
 - Removed stale, unused native binaries from `FFmpegVideoPlayer.Core/runtimes` and an old checked-in example log. The packaged native libraries remain under the repository's root `runtimes` directory.
 - Centralized generated build files under `artifacts`, added a package-preserving cleanup command, and documented standalone build and packaging.
 

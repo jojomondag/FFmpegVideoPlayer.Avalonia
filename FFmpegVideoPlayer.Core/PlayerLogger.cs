@@ -41,25 +41,26 @@ public sealed class PlayerLogger : IDisposable
         {
             if (_disposed) return;
 
-            var entry = new LogEntry
+            // Media URLs can contain credentials, so debug output excludes data.
+            Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [{component}] {operation}");
+
+            // Without a file destination there is no consumer for retained entries.
+            if (_logFilePath is null)
+                return;
+
+            _logEntries.Add(new LogEntry
             {
                 Timestamp = DateTime.UtcNow,
                 TimestampLocal = DateTime.Now,
                 Component = component,
                 Operation = operation,
                 Data = data
-            };
-
-            _logEntries.Add(entry);
-
-            // Do not emit data by default: media URLs can contain signed query strings,
-            // cookies, or other credentials. Applications can opt into a JSON log file.
-            Debug.WriteLine($"[{entry.TimestampLocal:HH:mm:ss.fff}] [{component}] {operation}");
+            });
             
             // Auto-flush every 5 seconds to ensure logs are saved even if app crashes
-            if (_logFilePath != null && (DateTime.Now - _lastFlush).TotalSeconds > 5)
+            if ((DateTime.Now - _lastFlush).TotalSeconds > 5)
             {
-                Flush();
+                FlushCore(logSuccess: true);
             }
         }
     }

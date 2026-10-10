@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -42,19 +41,10 @@ public partial class VideoPlayerControl : UserControl
     private MediaInfo? _diagnosticMediaInfo;
     private FFmpegMediaPlayer? _mediaPlayer;
     private Task<Exception?> _detachedDisposal = Task.FromResult<Exception?>(null);
-    private Slider? _seekBar;
-    private Slider? _volumeSlider;
-    private TextBlock? _currentTimeText;
-    private TextBlock? _totalTimeText;
-    private Path? _playPauseIcon;
-    private Path? _volumeIcon;
     private bool _isDraggingSeekBar;
     private bool _isMuted;
     private int _previousVolume = 100;
     private bool _isInitialized;
-    private Border? _controlPanelBorder;
-    private Border? _videoBorder;
-    private Button? _openButton;
     private IVideoRenderer? _videoRenderer;
     private string? _currentMediaPath;
     private bool _hasMediaLoaded;
@@ -134,9 +124,9 @@ public partial class VideoPlayerControl : UserControl
             {
                 _mediaPlayer.Volume = value;
             }
-            if (_volumeSlider != null)
+            if (VolumeSlider != null)
             {
-                _volumeSlider.Value = value;
+                VolumeSlider.Value = value;
             }
         }
     }
@@ -156,14 +146,7 @@ public partial class VideoPlayerControl : UserControl
     public bool ShowControls
     {
         get => GetValue(ShowControlsProperty);
-        set
-        {
-            SetValue(ShowControlsProperty, value);
-            if (_controlPanelBorder != null)
-            {
-                _controlPanelBorder.IsVisible = value;
-            }
-        }
+        set => SetValue(ShowControlsProperty, value);
     }
 
     /// <summary>
@@ -507,41 +490,31 @@ public partial class VideoPlayerControl : UserControl
         // Enable focus so we can receive keyboard events
         Focusable = true;
 
-        _seekBar = this.FindControl<Slider>("SeekBar");
-        _volumeSlider = this.FindControl<Slider>("VolumeSlider");
-        _currentTimeText = this.FindControl<TextBlock>("CurrentTimeText");
-        _totalTimeText = this.FindControl<TextBlock>("TotalTimeText");
-        _playPauseIcon = this.FindControl<Path>("PlayPauseIcon");
-        _volumeIcon = this.FindControl<Path>("VolumeIcon");
-        _controlPanelBorder = this.FindControl<Border>("ControlPanelBorder");
-        _videoBorder = this.FindControl<Border>("VideoBorder");
-        _openButton = this.FindControl<Button>("OpenButton");
-
         // Icons must be ready for the first render, before any playback event.
         ApplyControlIcons();
 
         // Apply initial visibility based on properties
-        if (_controlPanelBorder != null)
+        if (ControlPanelBorder != null)
         {
-            _controlPanelBorder.IsVisible = ShowControls;
+            ControlPanelBorder.IsVisible = ShowControls;
         }
-        if (_openButton != null)
+        if (OpenButton != null)
         {
-            _openButton.IsVisible = ShowOpenButton;
+            OpenButton.IsVisible = ShowOpenButton;
         }
 
         // Setup seek bar events
-        if (_seekBar != null)
+        if (SeekBar != null)
         {
-            _seekBar.AddHandler(Avalonia.Input.InputElement.PointerPressedEvent, OnSeekBarPointerPressed, Avalonia.Interactivity.RoutingStrategies.Tunnel);
-            _seekBar.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, OnSeekBarPointerReleased, Avalonia.Interactivity.RoutingStrategies.Tunnel);
-            _seekBar.AddHandler(Avalonia.Input.InputElement.PointerCaptureLostEvent, OnSeekBarPointerCaptureLost, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+            SeekBar.AddHandler(Avalonia.Input.InputElement.PointerPressedEvent, OnSeekBarPointerPressed, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+            SeekBar.AddHandler(InputElement.PointerReleasedEvent, OnSeekBarDragCompleted, RoutingStrategies.Tunnel);
+            SeekBar.AddHandler(InputElement.PointerCaptureLostEvent, OnSeekBarDragCompleted, RoutingStrategies.Tunnel);
         }
 
         // Setup volume slider
-        if (_volumeSlider != null)
+        if (VolumeSlider != null)
         {
-            _volumeSlider.ValueChanged += OnVolumeChanged;
+            VolumeSlider.ValueChanged += OnVolumeChanged;
         }
 
         // Initialize when attached to visual tree
@@ -569,27 +542,16 @@ public partial class VideoPlayerControl : UserControl
                 break;
             
             case Key.Left:
-                if (_mediaPlayer != null && _mediaPlayer.Length > 0)
-                {
-                    // Seek backward: 5s normal, 30s with Ctrl
-                    double currentPos = _mediaPlayer.Position * _mediaPlayer.Length; // ms
-                    double jump = isCtrl ? 30000 : 5000; // ms
-                    double newPos = Math.Max(0, currentPos - jump);
-                    float newPercent = (float)(newPos / _mediaPlayer.Length);
-                    Seek(newPercent);
-                }
-                e.Handled = true;
-                break;
-
             case Key.Right:
                 if (_mediaPlayer != null && _mediaPlayer.Length > 0)
                 {
-                    // Seek forward: 5s normal, 30s with Ctrl
+                    // Seek 5 seconds, or 30 seconds with Ctrl.
                     double currentPos = _mediaPlayer.Position * _mediaPlayer.Length; // ms
                     double jump = isCtrl ? 30000 : 5000; // ms
-                    double newPos = Math.Min(_mediaPlayer.Length, currentPos + jump);
-                    float newPercent = (float)(newPos / _mediaPlayer.Length);
-                    Seek(newPercent);
+                    double newPos = e.Key == Key.Left
+                        ? Math.Max(0, currentPos - jump)
+                        : Math.Min(_mediaPlayer.Length, currentPos + jump);
+                    Seek((float)(newPos / _mediaPlayer.Length));
                 }
                 e.Handled = true;
                 break;
@@ -630,23 +592,23 @@ public partial class VideoPlayerControl : UserControl
         }
         else if (e.Property == ShowOpenButtonProperty)
         {
-            if (_openButton != null)
+            if (OpenButton != null)
             {
-                _openButton.IsVisible = (bool)(e.NewValue ?? true);
+                OpenButton.IsVisible = (bool)(e.NewValue ?? true);
             }
         }
         else if (e.Property == ControlPanelBackgroundProperty)
         {
-            if (_controlPanelBorder != null && e.NewValue is global::Avalonia.Media.IBrush brush)
+            if (ControlPanelBorder != null && e.NewValue is global::Avalonia.Media.IBrush brush)
             {
-                _controlPanelBorder.Background = brush;
+                ControlPanelBorder.Background = brush;
             }
         }
         else if (e.Property == VideoBackgroundProperty)
         {
-            if (_videoBorder != null)
+            if (VideoBorder != null)
             {
-                _videoBorder.Background = e.NewValue as global::Avalonia.Media.IBrush; // Can be null for transparency
+                VideoBorder.Background = e.NewValue as global::Avalonia.Media.IBrush; // Can be null for transparency
             }
         }
         else if (e.Property == VideoStretchProperty)
@@ -656,9 +618,9 @@ public partial class VideoPlayerControl : UserControl
         }
         else if (e.Property == ShowControlsProperty)
         {
-            if (_controlPanelBorder != null)
+            if (ControlPanelBorder != null)
             {
-                _controlPanelBorder.IsVisible = (bool)(e.NewValue ?? true);
+                ControlPanelBorder.IsVisible = (bool)(e.NewValue ?? true);
             }
         }
         else if (e.Property == RenderingModeProperty)
@@ -694,9 +656,9 @@ public partial class VideoPlayerControl : UserControl
         // Apply to all icon Path elements
         var icons = new[] {
             this.FindControl<Path>("FolderIcon"),
-            _playPauseIcon,
+            PlayPauseIcon,
             this.FindControl<Path>("StopIcon"),
-            _volumeIcon,
+            VolumeIcon,
             this.FindControl<Path>("FullscreenIcon")
         };
         foreach (var icon in icons)
@@ -704,15 +666,15 @@ public partial class VideoPlayerControl : UserControl
             if (icon != null) icon.Fill = brush;
         }
         // Apply to time text
-        if (_currentTimeText != null) _currentTimeText.Foreground = brush;
-        if (_totalTimeText != null) _totalTimeText.Foreground = brush;
+        if (CurrentTimeText != null) CurrentTimeText.Foreground = brush;
+        if (TotalTimeText != null) TotalTimeText.Foreground = brush;
     }
 
     private void ApplyButtonBackground(global::Avalonia.Media.IBrush? brush)
     {
         if (brush == null) return;
         var buttons = new[] {
-            _openButton,
+            OpenButton,
             this.FindControl<Button>("PlayPauseButton"),
             this.FindControl<Button>("StopButton")
         };
@@ -738,10 +700,10 @@ public partial class VideoPlayerControl : UserControl
         if (folderIcon != null) folderIcon.Data = provider.CreateFolderOpenIcon();
         var stopIcon = this.FindControl<Path>("StopIcon");
         if (stopIcon != null) stopIcon.Data = provider.CreateStopIcon();
-        if (_playPauseIcon != null)
-            _playPauseIcon.Data = IsPlaying ? provider.CreatePauseIcon() : provider.CreatePlayIcon();
-        if (_volumeIcon != null)
-            _volumeIcon.Data = _isMuted ? provider.CreateVolumeOffIcon() : provider.CreateVolumeHighIcon();
+        if (PlayPauseIcon != null)
+            PlayPauseIcon.Data = IsPlaying ? provider.CreatePauseIcon() : provider.CreatePlayIcon();
+        if (VolumeIcon != null)
+            VolumeIcon.Data = _isMuted ? provider.CreateVolumeOffIcon() : provider.CreateVolumeHighIcon();
         UpdateFullscreenIcon();
     }
 
@@ -791,26 +753,26 @@ public partial class VideoPlayerControl : UserControl
             SetupVideoRenderer();
             
             // Apply initial property values
-            if (_openButton != null)
+            if (OpenButton != null)
             {
-                _openButton.IsVisible = ShowOpenButton;
+                OpenButton.IsVisible = ShowOpenButton;
             }
             var fullscreenBtn = this.FindControl<Button>("FullscreenButton");
             if (fullscreenBtn != null)
             {
                 fullscreenBtn.IsVisible = ShowFullscreenButton;
             }
-            if (_controlPanelBorder != null)
+            if (ControlPanelBorder != null)
             {
-                _controlPanelBorder.IsVisible = ShowControls;
+                ControlPanelBorder.IsVisible = ShowControls;
                 if (ControlPanelBackground != null)
                 {
-                    _controlPanelBorder.Background = ControlPanelBackground;
+                    ControlPanelBorder.Background = ControlPanelBackground;
                 }
             }
-            if (_videoBorder != null)
+            if (VideoBorder != null)
             {
-                _videoBorder.Background = VideoBackground; // Can be null for transparency
+                VideoBorder.Background = VideoBackground; // Can be null for transparency
             }
             // Load source if set (Open() handles AutoPlay internally)
             var initialMedia = Media ?? (!string.IsNullOrWhiteSpace(Source)
@@ -904,14 +866,14 @@ public partial class VideoPlayerControl : UserControl
 
     private void SetupVideoRenderer()
     {
-        if (_videoBorder == null) return;
-        _videoBorder.MinWidth = 0;
+        if (VideoBorder == null) return;
+        VideoBorder.MinWidth = 0;
 
         _videoRenderer?.Dispose();
         _videoRenderer = null;
 
         // Remove old renderer from visual tree
-        _videoBorder.Child = null;
+        VideoBorder.Child = null;
 
         Control? rendererControl;
         try
@@ -936,7 +898,7 @@ public partial class VideoPlayerControl : UserControl
             rendererControl.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
             rendererControl.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch;
             
-            _videoBorder.Child = rendererControl;
+            VideoBorder.Child = rendererControl;
             
             ApplyVideoStretch(VideoStretch);
         }
@@ -1024,7 +986,7 @@ public partial class VideoPlayerControl : UserControl
     public MediaOpenResult Open(MediaSource source, MediaOpenOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(source);
-        EnsurePlayerInitialized();
+        InitializePlayer();
         var mediaPlayer = Volatile.Read(ref _mediaPlayer);
         if (mediaPlayer is null)
             return CreateInitializationFailure();
@@ -1043,8 +1005,7 @@ public partial class VideoPlayerControl : UserControl
             || !ReferenceEquals(source, Volatile.Read(ref _requestedSource)))
             return SupersededOpenResult();
         var result = mediaPlayer.Open(source, options);
-        if (generation == Volatile.Read(ref _openGeneration)
-            && ReferenceEquals(source, Volatile.Read(ref _requestedSource))
+        if (IsCurrentSource(source, generation)
             && result.Succeeded
             && result.MediaInfo is not null)
         {
@@ -1060,7 +1021,7 @@ public partial class VideoPlayerControl : UserControl
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
-        EnsurePlayerInitialized();
+        InitializePlayer();
         var mediaPlayer = Volatile.Read(ref _mediaPlayer);
         if (mediaPlayer is null)
             return CreateInitializationFailure();
@@ -1096,8 +1057,7 @@ public partial class VideoPlayerControl : UserControl
             {
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    if (generation == Volatile.Read(ref _openGeneration) &&
-                        ReferenceEquals(source, Volatile.Read(ref _requestedSource)))
+                    if (IsCurrentSource(source, generation))
                     {
                         CompleteMediaOpen(source, result.MediaInfo, generation);
                     }
@@ -1142,8 +1102,7 @@ public partial class VideoPlayerControl : UserControl
                 {
                     var generation = Volatile.Read(ref _openGeneration);
                     ReportDiagnostic(VideoPlayerDiagnosticKind.Failed, error: error);
-                    if (generation == Volatile.Read(ref _openGeneration)
-                        && ReferenceEquals(source, Volatile.Read(ref _requestedSource)))
+                    if (IsCurrentSource(source, generation))
                         MediaFailed?.Invoke(this, new MediaFailedEventArgs(error, source));
                 }
             });
@@ -1153,9 +1112,7 @@ public partial class VideoPlayerControl : UserControl
     private void CompleteMediaOpen(MediaSource source, MediaInfo mediaInfo, long generation)
     {
         var mediaPlayer = _mediaPlayer;
-        if (mediaPlayer is null
-            || generation != Volatile.Read(ref _openGeneration)
-            || !ReferenceEquals(source, Volatile.Read(ref _requestedSource)))
+        if (mediaPlayer is null || !IsCurrentSource(source, generation))
         {
             return;
         }
@@ -1178,8 +1135,7 @@ public partial class VideoPlayerControl : UserControl
         ReportDiagnostic(VideoPlayerDiagnosticKind.Opened, mediaInfo: mediaInfo);
 
         // Diagnostic observers can replace the source just like media observers.
-        if (generation != Volatile.Read(ref _openGeneration)
-            || !ReferenceEquals(source, Volatile.Read(ref _requestedSource))
+        if (!IsCurrentSource(source, generation)
             || !ReferenceEquals(mediaPlayer, _mediaPlayer))
         {
             return;
@@ -1187,8 +1143,7 @@ public partial class VideoPlayerControl : UserControl
 
         MediaOpened?.Invoke(this, new MediaOpenedEventArgs(source, mediaInfo));
 
-        if (generation != Volatile.Read(ref _openGeneration)
-            || !ReferenceEquals(source, Volatile.Read(ref _requestedSource))
+        if (!IsCurrentSource(source, generation)
             || !ReferenceEquals(mediaPlayer, _mediaPlayer))
         {
             return;
@@ -1204,16 +1159,14 @@ public partial class VideoPlayerControl : UserControl
         }
     }
 
-    private void EnsurePlayerInitialized()
-    {
-        if (!_isInitialized)
-            InitializePlayer();
-    }
-
     private bool IsCurrentPlayer(FFmpegMediaPlayer? player, long generation) =>
         player is not null
         && ReferenceEquals(player, Volatile.Read(ref _mediaPlayer))
         && generation == Volatile.Read(ref _openGeneration);
+
+    private bool IsCurrentSource(MediaSource? source, long generation) =>
+        generation == Volatile.Read(ref _openGeneration)
+        && ReferenceEquals(source, Volatile.Read(ref _requestedSource));
 
     private static MediaOpenResult SupersededOpenResult() => MediaOpenResult.Failure(new MediaError(
         MediaErrorCode.Cancelled, "The media open was superseded by another player operation."));
@@ -1261,8 +1214,8 @@ public partial class VideoPlayerControl : UserControl
     {
         CancelControlOpen();
         _mediaPlayer?.Stop();
-        if (_seekBar != null) _seekBar.Value = 0;
-        if (_currentTimeText != null) _currentTimeText.Text = "00:00";
+        if (SeekBar != null) SeekBar.Value = 0;
+        if (CurrentTimeText != null) CurrentTimeText.Text = "00:00";
         // Clear the renderer to show background when stopped
         _videoRenderer?.Clear();
     }
@@ -1299,9 +1252,9 @@ public partial class VideoPlayerControl : UserControl
             _currentMediaPath = null;
             _hasMediaLoaded = false;
             _diagnosticMediaInfo = null;
-            if (_seekBar != null) _seekBar.Value = 0;
-            if (_currentTimeText != null) _currentTimeText.Text = "00:00";
-            if (_totalTimeText != null) _totalTimeText.Text = "00:00";
+            if (SeekBar != null) SeekBar.Value = 0;
+            if (CurrentTimeText != null) CurrentTimeText.Text = "00:00";
+            if (TotalTimeText != null) TotalTimeText.Text = "00:00";
             _videoRenderer?.Clear();
         });
     }
@@ -1382,12 +1335,7 @@ public partial class VideoPlayerControl : UserControl
 
     private void OnPlaying(object? sender, EventArgs e)
     {
-        var generation = Volatile.Read(ref _openGeneration);
-        if (sender is not FFmpegMediaPlayer player || !IsCurrentPlayer(player, generation)) return;
-        var state = player.State;
-        UpdatePlayPauseButton(true);
-        ReportDiagnostic(VideoPlayerDiagnosticKind.Playing);
-        if (IsCurrentPlayer(player, generation) && state == player.State)
+        if (UpdatePlaybackState(sender, VideoPlayerDiagnosticKind.Playing))
             PlaybackStarted?.Invoke(this, EventArgs.Empty);
     }
 
@@ -1402,8 +1350,7 @@ public partial class VideoPlayerControl : UserControl
         _hasMediaLoaded = false;
         var generation = Volatile.Read(ref _openGeneration);
         ReportDiagnostic(VideoPlayerDiagnosticKind.Failed, error: e.Error);
-        if (generation == Volatile.Read(ref _openGeneration)
-            && ReferenceEquals(requestedSource, Volatile.Read(ref _requestedSource)))
+        if (IsCurrentSource(requestedSource, generation))
             MediaFailed?.Invoke(this, e);
     }
 
@@ -1412,18 +1359,18 @@ public partial class VideoPlayerControl : UserControl
 
     private void ShowAudioOnlyPlaceholder()
     {
-        if (_videoBorder == null)
+        if (VideoBorder == null)
             return;
 
         _videoRenderer?.Dispose();
         _videoRenderer = null;
-        _videoBorder.MinWidth = 520;
+        VideoBorder.MinWidth = 520;
 
         var fileName = !string.IsNullOrWhiteSpace(_currentMediaPath)
             ? System.IO.Path.GetFileName(_currentMediaPath)
             : "Audio";
 
-        _videoBorder.Child = new Grid
+        VideoBorder.Child = new Grid
         {
             MinWidth = 520,
             MinHeight = 160,
@@ -1446,26 +1393,26 @@ public partial class VideoPlayerControl : UserControl
 
     private void OnPaused(object? sender, EventArgs e)
     {
-        var generation = Volatile.Read(ref _openGeneration);
-        if (sender is not FFmpegMediaPlayer player || !IsCurrentPlayer(player, generation)) return;
-        var state = player.State;
-        UpdatePlayPauseButton(false);
-        ReportDiagnostic(VideoPlayerDiagnosticKind.Paused);
-        if (IsCurrentPlayer(player, generation) && state == player.State)
+        if (UpdatePlaybackState(sender, VideoPlayerDiagnosticKind.Paused))
             PlaybackPaused?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnStopped(object? sender, EventArgs e)
     {
-        var generation = Volatile.Read(ref _openGeneration);
-        if (sender is not FFmpegMediaPlayer player || !IsCurrentPlayer(player, generation)) return;
-        var state = player.State;
-        UpdatePlayPauseButton(false);
-        // Clear before notifying observers, which may open a replacement source.
-        _videoRenderer?.Clear();
-        ReportDiagnostic(VideoPlayerDiagnosticKind.Stopped);
-        if (IsCurrentPlayer(player, generation) && state == player.State)
+        if (UpdatePlaybackState(sender, VideoPlayerDiagnosticKind.Stopped))
             PlaybackStopped?.Invoke(this, EventArgs.Empty);
+    }
+
+    private bool UpdatePlaybackState(object? sender, VideoPlayerDiagnosticKind kind)
+    {
+        var generation = Volatile.Read(ref _openGeneration);
+        if (sender is not FFmpegMediaPlayer player || !IsCurrentPlayer(player, generation)) return false;
+        var state = player.State;
+        UpdatePlayPauseButton(kind == VideoPlayerDiagnosticKind.Playing);
+        // Clear before notifying observers, which may open a replacement source.
+        if (kind == VideoPlayerDiagnosticKind.Stopped) _videoRenderer?.Clear();
+        ReportDiagnostic(kind);
+        return IsCurrentPlayer(player, generation) && state == player.State;
     }
 
     private void OnEndReached(object? sender, EventArgs e)
@@ -1481,9 +1428,9 @@ public partial class VideoPlayerControl : UserControl
             UpdatePlayPauseButton(false);
 
             // Set seek bar to end and show total time
-            if (_seekBar != null) _seekBar.Value = 100;
-            if (_currentTimeText != null && _totalTimeText != null)
-                _currentTimeText.Text = _totalTimeText.Text;
+            if (SeekBar != null) SeekBar.Value = 100;
+            if (CurrentTimeText != null && TotalTimeText != null)
+                CurrentTimeText.Text = TotalTimeText.Text;
 
             ReportDiagnostic(VideoPlayerDiagnosticKind.Ended);
             if (IsCurrentPlayer(player, generation)
@@ -1498,15 +1445,15 @@ public partial class VideoPlayerControl : UserControl
 
         Dispatcher.UIThread.Post(() =>
         {
-            if (_seekBar != null)
+            if (SeekBar != null)
             {
-                _seekBar.Value = e.Position * 100;
+                SeekBar.Value = e.Position * 100;
             }
 
-            if (_currentTimeText != null && _mediaPlayer.Length > 0)
+            if (CurrentTimeText != null && _mediaPlayer.Length > 0)
             {
                 var currentTime = TimeSpan.FromMilliseconds(_mediaPlayer.Length * e.Position);
-                _currentTimeText.Text = FormatTime(currentTime);
+                CurrentTimeText.Text = FormatTime(currentTime);
             }
         });
     }
@@ -1515,10 +1462,10 @@ public partial class VideoPlayerControl : UserControl
     {
         Dispatcher.UIThread.Post(() =>
         {
-            if (_totalTimeText != null)
+            if (TotalTimeText != null)
             {
                 var totalTime = TimeSpan.FromMilliseconds(e.Length);
-                _totalTimeText.Text = FormatTime(totalTime);
+                TotalTimeText.Text = FormatTime(totalTime);
             }
         });
     }
@@ -1528,16 +1475,7 @@ public partial class VideoPlayerControl : UserControl
         _isDraggingSeekBar = true;
     }
 
-    private void OnSeekBarPointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
-    {
-        if (_isDraggingSeekBar)
-        {
-            _isDraggingSeekBar = false;
-            SeekToCurrentSliderPosition();
-        }
-    }
-
-    private void OnSeekBarPointerCaptureLost(object? sender, Avalonia.Input.PointerCaptureLostEventArgs e)
+    private void OnSeekBarDragCompleted(object? sender, RoutedEventArgs e)
     {
         if (_isDraggingSeekBar)
         {
@@ -1548,9 +1486,9 @@ public partial class VideoPlayerControl : UserControl
 
     private void SeekToCurrentSliderPosition()
     {
-        if (_mediaPlayer == null || _seekBar == null) return;
+        if (_mediaPlayer == null || SeekBar == null) return;
 
-        var position = (float)(_seekBar.Value / 100);
+        var position = (float)(SeekBar.Value / 100);
         _mediaPlayer.Seek(position);
 
         // If paused or stopped, decode and show the frame at the new position
@@ -1579,24 +1517,21 @@ public partial class VideoPlayerControl : UserControl
             {
                 Title = "Open Video File",
                 AllowMultiple = false,
-                FileTypeFilter = new List<FilePickerFileType>
-                {
-                    new("Video Files") { Patterns = new[] { "*.mp4", "*.mkv", "*.avi", "*.mov", "*.wmv", "*.flv", "*.webm", "*.m4v", "*.ts" } },
-                    new("Audio Files") { Patterns = new[] { "*.mp3", "*.wav", "*.flac", "*.aac", "*.ogg", "*.m4a" } },
-                    new("All Files") { Patterns = new[] { "*" } }
-                }
+                FileTypeFilter =
+                [
+                    new("Video Files") { Patterns = ["*.mp4", "*.mkv", "*.avi", "*.mov", "*.wmv", "*.flv", "*.webm", "*.m4v", "*.ts"] },
+                    new("Audio Files") { Patterns = ["*.mp3", "*.wav", "*.flac", "*.aac", "*.ogg", "*.m4a"] },
+                    new("All Files") { Patterns = ["*"] }
+                ]
             });
 
             if (files.Count > 0)
             {
                 var file = files[0];
                 var path = file.Path.LocalPath;
-                Debug.WriteLine($"[VideoPlayerControl] File selected from picker: {path}");
                 Open(path);
-                Debug.WriteLine($"[VideoPlayerControl] After Open: _hasMediaLoaded={_hasMediaLoaded}, IsPlaying={_mediaPlayer?.IsPlaying}");
                 if (_hasMediaLoaded && _mediaPlayer != null && !_mediaPlayer.IsPlaying)
                 {
-                    Debug.WriteLine("[VideoPlayerControl] Calling Play after successful open");
                     _mediaPlayer.Play();
                 }
             }
@@ -1619,7 +1554,7 @@ public partial class VideoPlayerControl : UserControl
 
     private void OnMuteClick(object? sender, RoutedEventArgs e)
     {
-        if (_mediaPlayer == null || _volumeIcon == null) return;
+        if (_mediaPlayer == null || VolumeIcon == null) return;
 
         _isMuted = !_isMuted;
 
@@ -1627,21 +1562,20 @@ public partial class VideoPlayerControl : UserControl
         {
             _previousVolume = _mediaPlayer.Volume;
             _mediaPlayer.Volume = 0;
-            if (_volumeSlider != null) _volumeSlider.Value = 0;
-            _volumeIcon.Data = GetIconProvider().CreateVolumeOffIcon();
+            if (VolumeSlider != null) VolumeSlider.Value = 0;
+            VolumeIcon.Data = GetIconProvider().CreateVolumeOffIcon();
         }
         else
         {
             _mediaPlayer.Volume = _previousVolume;
-            if (_volumeSlider != null) _volumeSlider.Value = _previousVolume;
-            _volumeIcon.Data = GetIconProvider().CreateVolumeHighIcon();
+            if (VolumeSlider != null) VolumeSlider.Value = _previousVolume;
+            VolumeIcon.Data = GetIconProvider().CreateVolumeHighIcon();
         }
     }
 
     private void OnFullscreenClick(object? sender, RoutedEventArgs e)
     {
         IsFullscreen = !IsFullscreen;
-        UpdateFullscreenIcon();
         FullscreenToggle?.Invoke(this, EventArgs.Empty);
     }
 
@@ -1662,9 +1596,9 @@ public partial class VideoPlayerControl : UserControl
         Dispatcher.UIThread.Post(() =>
         {
             var iconProvider = GetIconProvider();
-            if (_playPauseIcon != null)
+            if (PlayPauseIcon != null)
             {
-                _playPauseIcon.Data = isPlaying ? iconProvider.CreatePauseIcon() : iconProvider.CreatePlayIcon();
+                PlayPauseIcon.Data = isPlaying ? iconProvider.CreatePauseIcon() : iconProvider.CreatePlayIcon();
             }
         });
     }

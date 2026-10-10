@@ -11,15 +11,14 @@ seekable streams, DASH manifests and YouTube URLs.
 
 ## Install
 
-The working tree targets `3.1.0-preview.2`. Until that preview is published, pack it
-locally and restore from the resulting package directory. The latest previously
-published version remains `3.0.3`.
+The working tree targets `3.1.0-preview.3`. Until that preview is published, pack it
+locally and restore from the resulting package directory.
 
 ```bash
-dotnet add package FFmpegVideoPlayer.Avalonia --version 3.1.0-preview.2
+dotnet add package FFmpegVideoPlayer.Avalonia --version 3.1.0-preview.3
 ```
 
-Version 3 requires **Avalonia 12.1.0+ (below 13)** and **.NET 8+**. The single
+This preview requires **Avalonia 12.1.0+ (below 13)** and targets **.NET 10 only**. The single
 package contains the Avalonia control, Core and OpenTK/OpenAL audio implementation;
 applications do not reference separate player packages.
 
@@ -185,7 +184,7 @@ codec support.
 
 ## Build from source
 
-The repository builds independently with the .NET 8 SDK or later:
+The repository builds with the .NET 10 SDK:
 
 ```bash
 dotnet build FFmpegVideoPlayer.Avalonia.sln -c Release

@@ -138,41 +138,18 @@ internal static unsafe class FFmpegPathResolver
         string? format,
         ref LateSeiLogFilterState state)
     {
-        switch (state)
+        var (suppress, nextState) = (state, format) switch
         {
-            case LateSeiLogFilterState.None:
-                if (string.Equals(format, LateSeiHeader, StringComparison.Ordinal))
-                {
-                    state = LateSeiLogFilterState.ExpectMissingFeatureContinuation;
-                    return true;
-                }
-
-                return false;
-
-            case LateSeiLogFilterState.ExpectMissingFeatureContinuation:
-                if (string.Equals(format, MissingFeatureContinuation, StringComparison.Ordinal))
-                {
-                    state = LateSeiLogFilterState.ExpectSampleUploadContinuation;
-                    return true;
-                }
-
-                state = LateSeiLogFilterState.None;
-                return false;
-
-            case LateSeiLogFilterState.ExpectSampleUploadContinuation:
-                if (string.Equals(format, SampleUploadContinuation, StringComparison.Ordinal))
-                {
-                    state = LateSeiLogFilterState.None;
-                    return true;
-                }
-
-                state = LateSeiLogFilterState.None;
-                return false;
-
-            default:
-                state = LateSeiLogFilterState.None;
-                return false;
-        }
+            (LateSeiLogFilterState.None, LateSeiHeader) =>
+                (true, LateSeiLogFilterState.ExpectMissingFeatureContinuation),
+            (LateSeiLogFilterState.ExpectMissingFeatureContinuation, MissingFeatureContinuation) =>
+                (true, LateSeiLogFilterState.ExpectSampleUploadContinuation),
+            (LateSeiLogFilterState.ExpectSampleUploadContinuation, SampleUploadContinuation) =>
+                (true, LateSeiLogFilterState.None),
+            _ => (false, LateSeiLogFilterState.None)
+        };
+        state = nextState;
+        return suppress;
     }
 
     /// <summary>
@@ -228,7 +205,7 @@ internal static unsafe class FFmpegPathResolver
         {
             try
             {
-                if (Directory.GetFiles(path, pattern).Length > 0)
+                if (Directory.EnumerateFiles(path, pattern).Any())
                     return true;
             }
             catch

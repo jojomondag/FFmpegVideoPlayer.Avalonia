@@ -84,7 +84,7 @@ public sealed class YouTubeMediaSourceResolver
         return MediaSource.FromSessionFactory(
             $"YouTube {videoId}",
             MediaSourceKind.YouTube,
-            token => ResolveSessionAsync(youtubeUrl, token));
+            token => ResolveSessionAsync(videoId, token));
     }
 
     /// <summary>
@@ -102,10 +102,9 @@ public sealed class YouTubeMediaSourceResolver
     }
 
     private async ValueTask<MediaSourceSession> ResolveSessionAsync(
-        string youtubeUrl,
+        VideoId videoId,
         CancellationToken cancellationToken = default)
     {
-        var videoId = VideoId.Parse(youtubeUrl);
         var resolution = await GetResolutionAsync(videoId, cancellationToken).ConfigureAwait(false);
 
         const string manifestFileName = "youtube.mpd";
@@ -162,14 +161,7 @@ public sealed class YouTubeMediaSourceResolver
         }
         catch when (resolutionTask.IsFaulted || resolutionTask.IsCanceled)
         {
-            lock (_resolutionCacheGate)
-            {
-                if (_resolutionCache.TryGetValue(cacheKey, out var cached)
-                    && ReferenceEquals(cached.ResolutionTask, resolutionTask))
-                {
-                    _resolutionCache.Remove(cacheKey);
-                }
-            }
+            RemoveFailedResolution(cacheKey, resolutionTask);
             throw;
         }
     }
@@ -237,13 +229,18 @@ public sealed class YouTubeMediaSourceResolver
         }
         catch
         {
-            lock (_resolutionCacheGate)
+            RemoveFailedResolution(cacheKey, resolutionTask);
+        }
+    }
+
+    private void RemoveFailedResolution(string cacheKey, Task<ResolvedYouTubeMedia> resolutionTask)
+    {
+        lock (_resolutionCacheGate)
+        {
+            if (_resolutionCache.TryGetValue(cacheKey, out var cached)
+                && ReferenceEquals(cached.ResolutionTask, resolutionTask))
             {
-                if (_resolutionCache.TryGetValue(cacheKey, out var cached)
-                    && ReferenceEquals(cached.ResolutionTask, resolutionTask))
-                {
-                    _resolutionCache.Remove(cacheKey);
-                }
+                _resolutionCache.Remove(cacheKey);
             }
         }
     }
