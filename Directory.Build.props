@@ -1,10 +1,12 @@
 <Project>
   <PropertyGroup>
-    <Version>3.1.0-preview.1</Version>
+    <Version>3.1.0-preview.2</Version>
     <AvaloniaVersion>12.1.0</AvaloniaVersion>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UseArtifactsOutput Condition="'$(UseArtifactsOutput)' == ''">true</UseArtifactsOutput>
+    <ArtifactsPath Condition="'$(ArtifactsPath)' == ''">$(MSBuildThisFileDirectory)artifacts</ArtifactsPath>
     <!-- Keep generated verification/build output out of SDK default items. -->
     <DefaultItemExcludes>$(DefaultItemExcludes);artifacts\**</DefaultItemExcludes>
   </PropertyGroup>

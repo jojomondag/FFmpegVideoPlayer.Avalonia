@@ -11,12 +11,12 @@ seekable streams, DASH manifests and YouTube URLs.
 
 ## Install
 
-The working tree targets `3.1.0-preview.1`. Until that preview is published, pack it
+The working tree targets `3.1.0-preview.2`. Until that preview is published, pack it
 locally and restore from the resulting package directory. The latest previously
 published version remains `3.0.3`.
 
 ```bash
-dotnet add package FFmpegVideoPlayer.Avalonia --version 3.1.0-preview.1
+dotnet add package FFmpegVideoPlayer.Avalonia --version 3.1.0-preview.2
 ```
 
 Version 3 requires **Avalonia 12.1.0+ (below 13)** and **.NET 8+**. The single
@@ -181,8 +181,29 @@ foreach (var result in results.Where(result => !result.Succeeded))
 Every distinct player is awaited even if another close fails. The helper does not
 dispose the controls or shut down the application. `MediaFileTypes` in Core offers
 case-insensitive audio/video extension hints; opening the actual source determines
-codec support. Provider-specific downloads, layout and application state stay with
-the consuming application.
+codec support.
+
+## Build from source
+
+The repository builds independently with the .NET 8 SDK or later:
+
+```bash
+dotnet build FFmpegVideoPlayer.Avalonia.sln -c Release
+dotnet test FFmpegVideoPlayer.Avalonia.sln -c Release --no-build
+dotnet pack Avalonia.FFmpegVideoPlayer.csproj -c Release -o artifacts/packages
+```
+
+Build output and intermediates go under `artifacts/bin` and `artifacts/obj`.
+The library's regression-test source is in `tests/`; tests and build output are
+excluded from the NuGet package. The example is a standalone player demonstration.
+
+Remove generated build files with PowerShell:
+
+```powershell
+./build/clean.ps1
+```
+
+This preserves NuGet packages and release records. Use `-WhatIf` to preview cleanup.
 
 ## License
 

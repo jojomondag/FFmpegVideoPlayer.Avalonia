@@ -26,13 +26,13 @@ Replace both `ProjectReference` entries in the example `.csproj` with this singl
 reference. Core, the control and the default audio backend are included:
 
 ```xml
-<PackageReference Include="FFmpegVideoPlayer.Avalonia" Version="3.1.0-preview.1" />
+<PackageReference Include="FFmpegVideoPlayer.Avalonia" Version="3.1.0-preview.2" />
 ```
 
 Until the preview is published, build it locally with
-`dotnet pack Avalonia.FFmpegVideoPlayer.csproj -c Release -o artifacts/package`.
+`dotnet pack Avalonia.FFmpegVideoPlayer.csproj -c Release -o artifacts/packages`.
 Then restore the example from that directory alongside NuGet.org:
 
 ```bash
-dotnet restore examples/FFmpegVideoPlayerExample --source artifacts/package --source https://api.nuget.org/v3/index.json
+dotnet restore examples/FFmpegVideoPlayerExample --source artifacts/packages --source https://api.nuget.org/v3/index.json
 ```

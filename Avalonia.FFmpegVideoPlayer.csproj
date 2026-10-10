@@ -11,7 +11,7 @@
     <Authors>jojomondag</Authors>
     <Company>jojomondag</Company>
     <Description>Standalone FFmpeg media player for Avalonia 12. Bundles FFmpeg for Windows x64; other OS/architectures use a compatible system FFmpeg installation.</Description>
-    <PackageReleaseNotes>v3.1.0-preview.1: Adds reusable playback and audio-output diagnostics, Material playback icons, best-effort asynchronous multi-player shutdown, and common media extension classification. Preserves the Avalonia 12 player and FFmpeg 8 native runtime requirements.</PackageReleaseNotes>
+    <PackageReleaseNotes>v3.1.0-preview.2: Centralizes standalone build output and provides package-preserving cleanup. Adds reusable playback and audio-output diagnostics, Material playback icons, best-effort asynchronous multi-player shutdown, and common media extension classification. Preserves the Avalonia 12 player and FFmpeg 8 native runtime requirements.</PackageReleaseNotes>
     <PackageTags>avalonia;ffmpeg;video;audio;player;media;cross-platform;windows-x64;system-ffmpeg</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/jojomondag/FFmpegVideoPlayer.Avalonia</PackageProjectUrl>

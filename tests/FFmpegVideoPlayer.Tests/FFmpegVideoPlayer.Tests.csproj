@@ -4,7 +4,7 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <!-- Exercise the geometry-cloning regression in the desktop consumer's version. -->
+    <!-- Verify geometry cloning with a compatible Avalonia patch release. -->
     <AvaloniaTestVersion Condition="'$(AvaloniaTestVersion)' == ''">12.1.3</AvaloniaTestVersion>
   </PropertyGroup>
 

@@ -6,6 +6,7 @@
 [Ll]ogs/
 *.log
 artifacts/
+.tmp-build/
 
 # NuGet Packages
 *.nupkg
@@ -38,10 +39,6 @@ Desktop.ini
 
 # User-specific files
 *.rsuser
-*.suo
-*.user
-*.userosscache
-*.sln.docstates
 
 # Test Results
 [Tt]est[Rr]esult*/
@@ -50,7 +47,7 @@ Desktop.ini
 # Publish output
 publish/
 
-# MemPalace per-project config
+# Local tool configuration
 /mempalace/
 .mcp.json
 .claude/settings.local.json

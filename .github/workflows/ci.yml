@@ -37,7 +37,7 @@ jobs:
 
       - name: Pack standalone NuGet package
         if: matrix.dotnet-version == '10.0.x'
-        run: dotnet pack Avalonia.FFmpegVideoPlayer.csproj -c Release -o artifacts/package
+        run: dotnet pack Avalonia.FFmpegVideoPlayer.csproj -c Release -o artifacts/packages
 
       - name: Validate package in a clean consumer
         if: matrix.dotnet-version == '10.0.x'
@@ -47,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          package_dir="$GITHUB_WORKSPACE/artifacts/package"
+          package_dir="$GITHUB_WORKSPACE/artifacts/packages"
           consumer_dir="$RUNNER_TEMP/ffmpeg-player-package-smoke"
           package_version="$(dotnet msbuild Avalonia.FFmpegVideoPlayer.csproj -nologo -getProperty:Version -p:Configuration=Release)"
 
@@ -72,4 +72,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: FFmpegVideoPlayer.Avalonia
-          path: artifacts/package/*.nupkg
+          path: artifacts/packages/*.nupkg

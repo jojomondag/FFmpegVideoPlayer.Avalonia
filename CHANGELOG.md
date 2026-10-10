@@ -11,12 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `VideoPlayerControl.Diagnostic` provides opt-in structured playback and audio-output diagnostics, including failures that leave video playback available.
 - `MaterialVideoIconProvider` supplies reusable playback icons without an application-side geometry implementation.
 - `MediaPlayerLifetime.CloseAllAsync` awaits all distinct players and returns individual close outcomes for application shutdown.
-- `MediaFileTypes` classifies common audio/video filename extensions without coupling the library to any download provider.
+- `MediaFileTypes` classifies common audio/video filename extensions.
 
 ### Changed
-- Prepared `3.1.0-preview.1` for local package validation. Publication is a separate step; existing published packages are unchanged.
+- Prepared `3.1.0-preview.2` for local package validation. Publication is a separate step; existing published packages are unchanged.
 - Shared duplicate bitmap rendering and log-writing code, and removed unused private helpers and redundant example setup without changing the public player API.
 - Removed stale, unused native binaries from `FFmpegVideoPlayer.Core/runtimes` and an old checked-in example log. The packaged native libraries remain under the repository's root `runtimes` directory.
+- Centralized generated build files under `artifacts`, added a package-preserving cleanup command, and documented standalone build and packaging.
 
 ## [3.0.3] - 2026-09-30
 

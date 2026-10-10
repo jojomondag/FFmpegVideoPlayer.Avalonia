@@ -36,12 +36,12 @@ jobs:
           dotnet test FFmpegVideoPlayer.Avalonia.sln -c Release --no-build --no-restore
 
       - name: Pack the standalone package
-        run: dotnet pack Avalonia.FFmpegVideoPlayer.csproj -c Release -p:Version=${{ env.PACKAGE_VERSION }} -o artifacts/package
+        run: dotnet pack Avalonia.FFmpegVideoPlayer.csproj -c Release -p:Version=${{ env.PACKAGE_VERSION }} -o artifacts/packages
 
       - name: Attach package to GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" artifacts/package/*.nupkg --clobber
+        run: gh release upload "$GITHUB_REF_NAME" artifacts/packages/*.nupkg --clobber
 
       - name: Publish to NuGet.org
-        run: dotnet nuget push "artifacts/package/*.nupkg" --source https://api.nuget.org/v3/index.json --api-key "${{ secrets.NUGET_API_KEY }}" --skip-duplicate
+        run: dotnet nuget push "artifacts/packages/*.nupkg" --source https://api.nuget.org/v3/index.json --api-key "${{ secrets.NUGET_API_KEY }}" --skip-duplicate
