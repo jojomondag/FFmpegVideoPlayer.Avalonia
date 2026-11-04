@@ -588,6 +588,13 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
             LogAlError("unqueue buffers while stopping");
         }
 
+        // A stopped source reports every newly queued buffer as already processed, so
+        // RecycleProcessedBuffers would discard fresh PCM and count it as played until
+        // UpdatePlaybackState restarts the source. Rewinding returns it to AL_INITIAL,
+        // where queued buffers wait to be played.
+        AL.SourceRewind(_source);
+        LogAlError("rewind source while stopping");
+
         _availableBuffers.Clear();
         foreach (var buffer in _allBuffers)
             _availableBuffers.Enqueue(buffer);
