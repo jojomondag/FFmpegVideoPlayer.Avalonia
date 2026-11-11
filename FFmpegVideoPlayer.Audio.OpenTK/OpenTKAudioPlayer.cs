@@ -136,6 +136,10 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
 
         Volatile.Write(ref _desiredPaused, 1);
         EnqueueCommand(new AudioCommand(AudioCommandKind.Pause));
+
+        // Release producers already waiting for queue space (see TryEnqueuePcm).
+        lock (_pcmLock)
+            Monitor.PulseAll(_pcmLock);
     }
 
     /// <inheritdoc />
@@ -269,10 +273,17 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
     {
         lock (_pcmLock)
         {
+            // Backpressure only applies while playing. A paused source never drains the
+            // queue, so blocking here could never be released by playback; producers such
+            // as FFmpegMediaPlayer call QueueSamples while holding their own lock, and a
+            // later Play()/Seek() on that player would then deadlock. While paused, accept
+            // the packet instead: the producer stops decoding at its next pause check, so
+            // the queue only overshoots by the producer's in-flight batch.
             while (Volatile.Read(ref _disposeRequested) == 0 &&
                    Volatile.Read(ref _workerExited) == 0 &&
                    packet.Generation == Volatile.Read(ref _generation) &&
                    Volatile.Read(ref _inputCompleted) == 0 &&
+                   Volatile.Read(ref _desiredPaused) == 0 &&
                    _pendingSampleCount + packet.Samples.Length > _maximumPendingSamples)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -576,6 +587,13 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
             AL.SourceUnqueueBuffers(_source, queued, buffers);
             LogAlError("unqueue buffers while stopping");
         }
+
+        // A stopped source reports every newly queued buffer as already processed, so
+        // RecycleProcessedBuffers would discard fresh PCM and count it as played until
+        // UpdatePlaybackState restarts the source. Rewinding returns it to AL_INITIAL,
+        // where queued buffers wait to be played.
+        AL.SourceRewind(_source);
+        LogAlError("rewind source while stopping");
 
         _availableBuffers.Clear();
         foreach (var buffer in _allBuffers)
