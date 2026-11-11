@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write # GitHub OIDC token for NuGet Trusted Publishing
 
 jobs:
   publish:
@@ -43,5 +44,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$GITHUB_REF_NAME" artifacts/package/*.nupkg --clobber
 
+      # Trusted Publishing: nuget.org trusts this workflow file in this repository and
+      # exchanges the GitHub OIDC token for an API key that is valid for one hour.
+      - name: NuGet login (Trusted Publishing)
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: jojomondag
+
       - name: Publish to NuGet.org
-        run: dotnet nuget push "artifacts/package/*.nupkg" --source https://api.nuget.org/v3/index.json --api-key "${{ secrets.NUGET_API_KEY }}" --skip-duplicate
+        run: dotnet nuget push "artifacts/package/*.nupkg" --source https://api.nuget.org/v3/index.json --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" --skip-duplicate
