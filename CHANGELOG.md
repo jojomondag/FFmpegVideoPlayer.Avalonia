@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.4] - 2026-11-11
+
+### Fixed
+- `Play()` and `Seek()` no longer deadlock after pausing an audio-only file. The OpenTK/OpenAL backend applies queue backpressure only while playing, so a paused source cannot hold the decode thread inside the player lock (thanks @coolguru81, PR #7).
+- The audio clock and `Position` no longer jump ahead after `Stop()` or a `Seek()` while paused. The OpenAL source is rewound after stopping, so newly queued audio is played instead of being counted as already played (thanks @coolguru81, PR #7).
+
 ## [3.0.3] - 2026-09-30
 
 ### Added

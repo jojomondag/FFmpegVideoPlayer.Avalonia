@@ -12,7 +12,7 @@ seekable streams, DASH manifests and YouTube URLs.
 ## Install
 
 ```bash
-dotnet add package FFmpegVideoPlayer.Avalonia --version 3.0.3
+dotnet add package FFmpegVideoPlayer.Avalonia --version 3.0.4
 ```
 
 Version 3 requires **Avalonia 12.1.0+ (below 13)** and **.NET 8+**. The single

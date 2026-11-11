@@ -14,7 +14,7 @@
     <Authors>jojomondag</Authors>
     <Company>jojomondag</Company>
     <Description>Standalone FFmpeg media player for Avalonia 12. Bundles FFmpeg for Windows x64; other OS/architectures use a compatible system FFmpeg installation.</Description>
-    <PackageReleaseNotes>v3.0.3: Preserves real-time audio playback for MP3 files with embedded cover art (thanks coolguru81, PR #6). Improves YouTube resolution caching and video scaling quality, removes unused code and build artifacts, and corrects legacy renderer descriptions. Includes the Avalonia 12 standalone player and FFmpeg 8.1.2 updates.</PackageReleaseNotes>
+    <PackageReleaseNotes>v3.0.4: Fixes a deadlock when resuming or seeking a paused audio-only file, and an audio clock jump after Stop or a paused Seek in the OpenTK/OpenAL backend (thanks coolguru81, PR #7).</PackageReleaseNotes>
     <PackageTags>avalonia;ffmpeg;video;audio;player;media;cross-platform;windows-x64;system-ffmpeg</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/jojomondag/FFmpegVideoPlayer.Avalonia</PackageProjectUrl>
