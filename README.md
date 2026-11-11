@@ -11,11 +11,10 @@ seekable streams, DASH manifests and YouTube URLs.
 
 ## Install
 
-The working tree targets `3.1.0-preview.3`. Until that preview is published, pack it
-locally and restore from the resulting package directory.
+The preview line is published as `3.1.0-preview.4`; the stable line is `3.0.4`.
 
 ```bash
-dotnet add package FFmpegVideoPlayer.Avalonia --version 3.1.0-preview.3
+dotnet add package FFmpegVideoPlayer.Avalonia --version 3.1.0-preview.4
 ```
 
 This preview requires **Avalonia 12.1.0+ (below 13)** and targets **.NET 10 only**. The single

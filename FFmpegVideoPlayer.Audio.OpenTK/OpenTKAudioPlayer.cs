@@ -123,6 +123,13 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
 
         Volatile.Write(ref _desiredPaused, paused ? 1 : 0);
         EnqueueCommand(new AudioCommand(paused ? AudioCommandKind.Pause : AudioCommandKind.Resume));
+
+        // Release producers already waiting for queue space (see TryEnqueuePcm).
+        if (paused)
+        {
+            lock (_pcmLock)
+                Monitor.PulseAll(_pcmLock);
+        }
     }
 
     /// <inheritdoc />
@@ -245,7 +252,14 @@ public sealed class OpenTKAudioPlayer : IAudioPlayer
     {
         lock (_pcmLock)
         {
+            // Backpressure only applies while playing. A paused source never drains the
+            // queue, so blocking here could never be released by playback; producers such
+            // as FFmpegMediaPlayer call QueueSamples while holding their own lock, and a
+            // later Play()/Seek() on that player would then deadlock. While paused, accept
+            // the packet instead: the producer stops decoding at its next pause check, so
+            // the queue only overshoots by the producer's in-flight batch.
             while (CanQueuePcm(packet.Generation) &&
+                   Volatile.Read(ref _desiredPaused) == 0 &&
                    _pendingSampleCount + packet.Samples.Length > _maximumPendingSamples)
             {
                 cancellationToken.ThrowIfCancellationRequested();

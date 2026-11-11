@@ -7,7 +7,7 @@
     <Authors>jojomondag</Authors>
     <Company>jojomondag</Company>
     <Description>Standalone FFmpeg media player for Avalonia 12 and .NET 10. Bundles FFmpeg for Windows x64; other OS/architectures use a compatible system FFmpeg installation.</Description>
-    <PackageReleaseNotes>Targets .NET 10 only. Removes unused legacy rendering, consolidates bitmap rendering and playback helpers, and reduces diagnostic allocations while preserving the player API and playback behavior.</PackageReleaseNotes>
+    <PackageReleaseNotes>v3.1.0-preview.4: Fixes a deadlock when resuming or seeking a paused audio-only file in the OpenTK/OpenAL backend, brought over from 3.0.4 (thanks coolguru81, PR #7).</PackageReleaseNotes>
     <PackageTags>avalonia;ffmpeg;video;audio;player;media;cross-platform;windows-x64;system-ffmpeg</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/jojomondag/FFmpegVideoPlayer.Avalonia</PackageProjectUrl>

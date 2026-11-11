@@ -26,7 +26,7 @@ Replace both `ProjectReference` entries in the example `.csproj` with this singl
 reference. Core, the control and the default audio backend are included:
 
 ```xml
-<PackageReference Include="FFmpegVideoPlayer.Avalonia" Version="3.1.0-preview.3" />
+<PackageReference Include="FFmpegVideoPlayer.Avalonia" Version="3.1.0-preview.4" />
 ```
 
 Until the preview is published, build it locally with
