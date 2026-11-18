@@ -11,10 +11,10 @@ seekable streams, DASH manifests and YouTube URLs.
 
 ## Install
 
-The preview line is published as `3.1.0-preview.4`; the stable line is `3.0.4`.
+The preview line is published as `3.1.0-preview.5`; the stable line is `3.0.4`.
 
 ```bash
-dotnet add package FFmpegVideoPlayer.Avalonia --version 3.1.0-preview.4
+dotnet add package FFmpegVideoPlayer.Avalonia --version 3.1.0-preview.5
 ```
 
 This preview requires **Avalonia 12.1.0+ (below 13)** and targets **.NET 10 only**. The single
@@ -22,10 +22,13 @@ package contains the Avalonia control, Core and OpenTK/OpenAL audio implementati
 applications do not reference separate player packages.
 
 The managed player API is cross-platform, but the native payload is platform-specific:
-FFmpeg 8.1.2 DLLs are bundled **only for Windows x64**. Windows x86/ARM64, macOS,
-and Linux require a compatible system FFmpeg installation or an explicitly supplied
-native-library path. OpenAL Soft audio DLLs are bundled separately for Windows x64,
-x86, and ARM64.
+FFmpeg 8.1.2 is bundled for **Windows x64** (DLLs) and **Linux x64** (shared objects,
+glibc 2.28 or newer). On those two platforms FFmpeg needs no system installation and
+works whatever FFmpeg version the system has installed, if any. Windows x86/ARM64,
+macOS and Linux ARM64 require a compatible system FFmpeg installation or an explicitly
+supplied native-library path. OpenAL Soft audio DLLs are bundled separately for Windows
+x64, x86, and ARM64; on Linux, audio output uses the system OpenAL library
+(`libopenal.so.1`, e.g. the `libopenal1` or `openal` package).
 
 YouTube video and audio are kept as separate adaptive streams, but FFmpeg reads the
 signed media URLs directly with HTTP range requests. This avoids downloading the same
@@ -98,11 +101,14 @@ OpenAL Soft binaries for Windows x64, x86 and ARM64 are included in the package.
 | Windows x64 | Bundled DLLs in the package |
 | Windows x86 / ARM64 | Compatible system FFmpeg 8 native libraries or a custom path |
 | macOS (x64 / ARM64) | System/Homebrew (`brew install ffmpeg`); can auto-install |
-| Linux (x64 / ARM64) | System packages (apt/dnf/pacman); can auto-install with passwordless sudo |
+| Linux x64 | Bundled shared objects in the package (glibc 2.28+, e.g. Debian 10, Ubuntu 20.04, RHEL 8 or newer) |
+| Linux ARM64 | Compatible system FFmpeg 8 packages (apt/dnf/pacman); can auto-install with passwordless sudo |
 
-On every row except Windows x64, FFmpeg is a system/native prerequisite; it is not
-contained in the NuGet package. Automatic installation, where supported, installs that
-system prerequisite. The required FFmpeg 8 library ABI is `avcodec-62`, `avformat-62`,
+On Windows x64 and Linux x64 the bundled copy is loaded before any system FFmpeg, so
+a system FFmpeg 6 or 9 does not interfere, and a bundled copy never triggers the Linux
+automatic installation. On the other rows, FFmpeg is a system/native prerequisite; it
+is not contained in the NuGet package. Automatic installation, where supported, installs
+that system prerequisite. The required FFmpeg 8 library ABI is `avcodec-62`, `avformat-62`,
 `avutil-60`, `swresample-6`, and `swscale-9`.
 
 Custom FFmpeg path:

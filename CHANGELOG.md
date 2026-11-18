@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0-preview.5] - 2026-11-18
+
+### Added
+- FFmpeg 8.1 shared libraries are bundled for Linux x64 under `runtimes/linux-x64/native` (`libavutil.so.60`, `libavcodec.so.62`, `libavformat.so.62`, `libswresample.so.6`, `libswscale.so.9`). They are BtbN's LGPL-3.0-or-later build of the same FFmpeg commit as the Windows DLLs (`n8.1.2-34-g9b6c8969e0`), stored as real files under their SONAMEs with `RUNPATH` `$ORIGIN`, and need only glibc 2.28 or newer. Linux x64 no longer depends on the system FFmpeg: a system FFmpeg 6 (Ubuntu 24.04) or 9 (Arch) used to fail with `NotSupportedException` from `av_log_set_callback`. Provenance, checksums and the two packaging changes are in `THIRD-PARTY-NOTICES.md`.
+
+### Fixed
+- On Linux, the bundled copy is also found when a RID-specific build or publish copies it flat into the application folder, and it is preferred over system libraries.
+- A bundled copy never triggers the Linux automatic installation (`sudo -n apt-get/dnf/pacman`), even if it fails to load.
+- A native library that fails to load no longer throws `NotSupportedException` while the log filter is installed. Initialization now moves on to the next search location and, if nothing loads, reports `FFmpegNotFoundException` with installation instructions.
+
 ## [3.1.0-preview.4] - 2026-11-11
 
 ### Fixed
