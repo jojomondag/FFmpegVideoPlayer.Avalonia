@@ -69,6 +69,9 @@ jobs:
             for native in avcodec-62 avformat-62 avutil-60 swresample-6 swscale-9 OpenAL32; do
               test -f "$output/runtimes/win-x64/native/$native.dll"
             done
+            for native in libavcodec.so.62 libavformat.so.62 libavutil.so.60 libswresample.so.6 libswscale.so.9; do
+              test -f "$output/runtimes/linux-x64/native/$native"
+            done
             test -f "$output/runtimes/win-x86/native/OpenAL32.dll"
             test -f "$output/runtimes/win-arm64/native/OpenAL32.dll"
           done

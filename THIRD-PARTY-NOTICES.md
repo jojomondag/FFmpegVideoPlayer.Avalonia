@@ -9,6 +9,8 @@ or restrict those terms.
 
 Copyright (c) 2000-2026 the FFmpeg developers and other contributors.
 
+### Windows x64
+
 The Windows x64 package payload contains five dynamically loaded FFmpeg libraries.
 Each DLL reports version `n8.1.2-34-g9b6c8969e0-20260810`, i.e. FFmpeg's 8.1
 release branch at commit
@@ -36,6 +38,65 @@ the files actually redistributed by this package.
 | `runtimes/win-x64/native/avutil-60.dll` | 2,937,856 | `CD5F740954B77DE0751F0A7A99E792DD6BF3078888EDCEC185AD147F98172115` |
 | `runtimes/win-x64/native/swresample-6.dll` | 723,968 | `984EA83CC14FE7337275A4882F8F392984A34D8749A2EA706E470FCA1BF03E34` |
 | `runtimes/win-x64/native/swscale-9.dll` | 12,570,624 | `460218915ACFB8EEDA061E7BA1A5F5D1CA19F7617A736762E03BAA74FF25656A` |
+
+### Linux x64
+
+The Linux x64 package payload contains the same five FFmpeg libraries, built from
+the same FFmpeg source commit as the Windows DLLs. `av_version_info()` reports
+`n8.1.2-34-g9b6c8969e0-20260731`: FFmpeg's 8.1 release branch at commit
+[`9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b`](https://github.com/FFmpeg/FFmpeg/commit/9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b);
+only the build-date suffix differs from the Windows build (`20260731` instead of
+`20260810`). Library versions are libavutil 60.26.102, libavcodec 62.28.102,
+libavformat 62.12.102, libswresample 6.3.102 and libswscale 9.5.102. Each library
+reports `LGPL version 3 or later`. Its embedded configure command contains
+`--enable-version3 --enable-shared --disable-static`, disables GPL-only and nonfree
+components (for example `--disable-libx264 --disable-libx265 --disable-libfdk-aac`),
+and identifies the `/ffbuild` Linux x64 build environment
+(`--cross-prefix=x86_64-ffbuild-linux-gnu- --target-os=linux --extra-version=20260731`).
+Accordingly, these binaries are also distributed under
+**GNU LGPL version 3 or later**.
+
+The binaries were imported from BtbN's
+[`ffmpeg-n8.1.2-34-g9b6c8969e0-linux64-lgpl-shared-8.1.tar.xz`](https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-31-14-10/ffmpeg-n8.1.2-34-g9b6c8969e0-linux64-lgpl-shared-8.1.tar.xz)
+archive (release `autobuild-2026-07-31-14-10`). The downloaded archive SHA-256 was
+`C882A80F06617149198A98A07A0880A7E881953AE9F9CB931F5BE09A4F93CAAE`.
+This dated build was used instead of the moving `ffmpeg-n8.1-latest-linux64-lgpl-shared-8.1.tar.xz`
+because, at import time (2026-11-18), the latest build had moved to `n8.1.3`.
+
+Two changes were made, because NuGet does not preserve symbolic links:
+
+1. Each real file `lib/<name>.so.<major>.<minor>.<micro>` was copied under its
+   ELF `SONAME` (`libavutil.so.60`, `libavcodec.so.62`, `libavformat.so.62`,
+   `libswresample.so.6`, `libswscale.so.9`), which is also the name FFmpeg.AutoGen loads.
+2. `patchelf 0.19.2 --set-rpath '$ORIGIN'` added a `DT_RUNPATH` of `$ORIGIN`, so the
+   libraries resolve each other from their own folder. The upstream files had no
+   `RUNPATH`; no code or other dynamic entries were changed.
+
+Repeating those two steps on the archive reproduces the packaged files byte for byte.
+Besides each other, the libraries need only base system libraries (`libc.so.6`,
+`libm.so.6`, `libmvec.so.1`, `libpthread.so.0`, `libdl.so.2`, `librt.so.1`,
+`ld-linux-x86-64.so.2` and `libgcc_s.so.1`); the newest symbol versions they require
+are `GLIBC_2.28` and `GCC_4.2.0`, so they need **glibc 2.28 or newer**.
+
+| Packaged file | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `runtimes/linux-x64/native/libavcodec.so.62` | 71,677,641 | `FE90FA807753E8583A5BFC9AF1FD64B2417EEF04A791EF9F7E43B1C8F7F41569` |
+| `runtimes/linux-x64/native/libavformat.so.62` | 24,640,961 | `BCF62CA76555C859D26FCFD4675E1D289BD3FB778CA8DA459F0C20D0F060B028` |
+| `runtimes/linux-x64/native/libavutil.so.60` | 8,404,073 | `B6025447A5BBBEE1E2A846665983D7E67491CEA2130CBB359681DC4CDF96888D` |
+| `runtimes/linux-x64/native/libswresample.so.6` | 504,089 | `DF897461DEE6A92393F6C2D6BF3DA96A937454E54C144719B079FB3A547D9826` |
+| `runtimes/linux-x64/native/libswscale.so.9` | 12,800,377 | `499BF171F66ECD71F1567C4C967ACAF9D9B6CE736C2FE41FFEA1972522592D10` |
+
+The unmodified upstream files, before renaming and `RUNPATH`:
+
+| Archive file | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `lib/libavcodec.so.62.28.102` | 71,655,248 | `E764CB8E423B837B7C600F23CEE7188E548B1451EC190B4691B95386EA870FC3` |
+| `lib/libavformat.so.62.12.102` | 24,615,520 | `FAD88584A80C883B7C1D159B90B9E3B26A2DF060DE42099F709A75BB61DD7EDA` |
+| `lib/libavutil.so.60.26.102` | 8,377,032 | `19E62B5ED04178807B0489D7CFF8AA69D8F9BF99429A0740F9B438220ED5D248` |
+| `lib/libswresample.so.6.3.102` | 498,632 | `BB6E402D91995F38A80D650B0C166C44F0618F3611175EB3FCA047D491DD337D` |
+| `lib/libswscale.so.9.5.102` | 12,791,784 | `88C41A7E04A4A686FFB695480DD885B59F91044B9ED268CA287F1ADC21D33815` |
+
+### License texts
 
 License texts are packaged as [`LICENSES/LGPL-3.0-or-later.txt`](LICENSES/LGPL-3.0-or-later.txt)
 and, because LGPLv3 incorporates GPLv3, [`LICENSES/GPL-3.0.txt`](LICENSES/GPL-3.0.txt).
@@ -75,6 +136,10 @@ Equivalent network access to the source and build material is available here:
   <https://git.ffmpeg.org/ffmpeg.git> and <https://ffmpeg.org/legal.html>
 - FFmpeg Windows binary archive:
   <https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-lgpl-shared-8.1.zip>
+- FFmpeg Linux x64 binary archive:
+  <https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-31-14-10/ffmpeg-n8.1.2-34-g9b6c8969e0-linux64-lgpl-shared-8.1.tar.xz>
+- FFmpeg build scripts (BtbN):
+  <https://github.com/BtbN/FFmpeg-Builds>
 - OpenAL Soft exact source:
   <https://github.com/kcat/openal-soft/archive/d3875f333fb6abe2f39d82caca329414871ae53b.tar.gz>
 
@@ -90,7 +155,7 @@ binary SHA-256 from this notice in the request.
 ## Replacement and debugging
 
 The package uses the native libraries through a shared-library mechanism. Recipients
-may replace the DLLs in their application's runtime output with modified,
+may replace the DLLs or shared objects in their application's runtime output with modified,
 interface-compatible builds. The package license terms do not prohibit reverse
 engineering performed for debugging modifications to the LGPL-covered libraries.
 No warranty is provided for the third-party software; see the complete license texts
