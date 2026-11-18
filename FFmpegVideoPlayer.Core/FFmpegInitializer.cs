@@ -17,7 +17,9 @@ namespace FFmpegVideoPlayer.Core;
 /// macOS (Intel x64/ARM64): Automatic installation via Homebrew supported!
 ///                          Or manually: brew install ffmpeg
 /// 
-/// Linux (x64/ARM64):       Install via package manager.
+/// Linux x64:               FFmpeg 8 is bundled in the NuGet package (glibc 2.28 or newer).
+///
+/// Linux (ARM64):           Install via package manager.
 ///                          sudo apt install ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev
 /// 
 /// Note: This library uses FFmpeg.AutoGen 8.x which requires FFmpeg 8.x libraries (libavcodec.62).
@@ -216,7 +218,10 @@ public static class FFmpegInitializer
             // Same treatment on Linux: try apt/dnf/pacman (needs sudo — succeeds on
             // passwordless-sudo systems, otherwise fails cleanly with the exact command
             // the user should run. See TryInstallFFmpegOnLinux for the rationale.)
-            if (string.IsNullOrEmpty(_ffmpegPath) && IsLinux && autoInstall)
+            // A bundled copy that failed to load is not repaired by system packages
+            // (discovery keeps preferring it), so never install alongside one.
+            if (string.IsNullOrEmpty(_ffmpegPath) && IsLinux && autoInstall
+                && FFmpegPathResolver.FindBundledPath() is null)
             {
                 Log("FFmpeg not found on Linux, attempting automatic installation via system package manager...");
                 StatusChanged?.Invoke("FFmpeg not found. Attempting install via system package manager…");

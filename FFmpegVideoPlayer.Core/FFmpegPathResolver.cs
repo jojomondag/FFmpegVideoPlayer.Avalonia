@@ -67,6 +67,13 @@ internal static unsafe class FFmpegPathResolver
             candidates.Add(Path.Combine(baseDir, "runtimes", "osx-universal", "native"));
         }
 
+        // RID-specific Linux builds and publishes also copy the NuGet native assets flat
+        // into the application folder; prefer that copy over system libraries too.
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            candidates.Add(baseDir);
+        }
+
         foreach (var candidate in candidates)
         {
             if (HasFFmpegLibrary(candidate))
@@ -114,7 +121,11 @@ internal static unsafe class FFmpegPathResolver
         // FFmpeg.AutoGen 8.x's DynamicallyLoadedBindings.Initialize is idempotent and
         // re-probes every function, so we can call it again after the search path changes.
         DynamicallyLoadedBindings.Initialize();
-        ffmpeg.av_log_set_callback(s_logCallback);
+        // Unresolved functions become stubs that throw NotSupportedException. Install the
+        // log filter only once the libraries loaded, so a candidate that fails to load
+        // reaches TryValidateBindings and the next search location instead of throwing here.
+        if (TryValidateBindings())
+            ffmpeg.av_log_set_callback(s_logCallback);
 #if DEBUG
         Console.WriteLine($"[FFmpegPathResolver] Bindings initialized (RootPath: {ffmpeg.RootPath})");
 #endif
